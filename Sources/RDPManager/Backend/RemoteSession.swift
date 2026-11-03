@@ -607,10 +607,16 @@ final class RemoteSession: Identifiable {
     }
 
     private func refreshStatistics() {
-        if let snapshot = liveSession?.liveReport.snapshot, hasPresentedFrame == false {
-            connectionStage = snapshot.stage
-            if case .connecting = phase, let attempt = snapshot.connectAttempt, attempt > 1 {
-                phase = .connecting(detail: "Trying again (\(attempt)/3)…")
+        if let snapshot = liveSession?.liveReport.snapshot {
+            // Known once the handshake is done; the final report only comes when the session ends.
+            if let tls = snapshot.tlsProtocol {
+                tlsProtocol = tls
+            }
+            if hasPresentedFrame == false {
+                connectionStage = snapshot.stage
+                if case .connecting = phase, let attempt = snapshot.connectAttempt, attempt > 1 {
+                    phase = .connecting(detail: "Trying again (\(attempt)/3)…")
+                }
             }
         }
         let metrics = metricsStore.metrics

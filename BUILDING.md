@@ -16,6 +16,7 @@ open "build/RDP Manager.app"
 
 - `-SampleLibraryInMemory` uses a demo library and an in-memory password store.
 - `-QuickConnect host[:port]` opens a session at launch.
+- `-Show inspector|editor|group|credentials|none` (debug builds only) sets up the window for README screenshots, with the sample-mode banner hidden.
 
 **App icon:** `swift Scripts/render-icon.swift` regenerates `Resources/AppIcon-1024.png` and `Resources/AppIcon.icns`.
 

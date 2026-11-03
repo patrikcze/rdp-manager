@@ -61,8 +61,35 @@ struct MainWindow: View {
                     model.alert = AppAlert(title: "Quick Connect", message: error)
                 }
             }
+            #if DEBUG
+            if let index = arguments.firstIndex(of: "-Show"), index + 1 < arguments.count {
+                showForScreenshot(arguments[index + 1])
+            }
+            #endif
         }
     }
+
+    #if DEBUG
+    /// `-Show inspector|editor|group|credentials` puts the window in a state for README
+    /// screenshots (with `-SampleLibraryInMemory`). Debug builds only.
+    private func showForScreenshot(_ scene: String) {
+        let inventory = model.inventory
+        let host = inventory.connections.first { $0.name == "DC01" } ?? inventory.connections.first
+        switch scene {
+        case "inspector":
+            if let host { model.sidebarSelection = .connection(host.id) }
+            model.isInspectorPresented = true
+        case "editor":
+            if let host { model.edit(host.id) }
+        case "group":
+            model.editingFolder = inventory.subfolders(of: nil).first
+        case "credentials":
+            model.sidebarSelection = .credentials
+        default:
+            break
+        }
+    }
+    #endif
 
     /// What the sidebar selects is shown: a host with an open session shows that session;
     /// anything else (a group, a smart list, Credentials, a host without a session) shows
@@ -132,7 +159,7 @@ struct WorkspaceView: View {
     var body: some View {
         let workspace = model.workspace
         VStack(spacing: 0) {
-            if model.isInMemorySampleMode {
+            if model.isInMemorySampleMode && Self.isScreenshotMode == false {
                 SampleModeBanner()
             }
             if workspace.isFocusMode == false || workspace.selectedSession == nil {
@@ -159,6 +186,15 @@ struct WorkspaceView: View {
 
     private var title: String {
         model.workspace.selectedSession?.title ?? "RDP Manager"
+    }
+
+    /// Debug builds launched with `-Show …` (README screenshots) leave the banner out.
+    private static var isScreenshotMode: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-Show")
+        #else
+        false
+        #endif
     }
 }
 

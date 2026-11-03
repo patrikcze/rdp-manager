@@ -1,6 +1,44 @@
+# SwiftPM
 .build/
 .swiftpm/
+Packages/
+
+# Build output (app bundle, iconset)
 build/
-*.xcodeproj
 DerivedData/
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.moved-aside
+timeline.xctimeline
+playground.xcworkspace
+
+# Test and coverage output
+*.xcresult
+*.profraw
+*.profdata
+
+# Archives / signing
+*.dSYM/
+*.dSYM.zip
+*.ipa
+*.zip
+*.p12
+*.mobileprovision
+*.provisionprofile
+
+# Editors and OS
 .DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# Local secrets and environment
+.env
+.env.*
+*.local

@@ -41,6 +41,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Run as a regular app even when launched as a bare executable during development.
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
+        // Window restoration may bring back no main window (it was closed before quitting),
+        // which would leave the app running with nothing on screen.
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            Self.showMainWindowIfNeeded()
+        }
+    }
+
+    /// Clicking the Dock icon with no window open brings the main window back.
+    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows _: Bool) -> Bool {
+        MainActor.assumeIsolated { Self.showMainWindowIfNeeded() }
+        return true
+    }
+
+    /// SwiftUI lists the single main `Window` scene in the Window menu under its title;
+    /// choosing that item is the supported way to open it from AppKit.
+    @MainActor
+    static func showMainWindowIfNeeded() {
+        let hasMainWindow = NSApp.windows.contains { window in
+            window.isVisible && window.identifier?.rawValue.hasPrefix("main") == true
+        }
+        guard hasMainWindow == false,
+              let item = NSApp.windowsMenu?.items.first(where: { $0.title == "RDP Manager" }),
+              let action = item.action
+        else { return }
+        NSApp.sendAction(action, to: item.target, from: item)
     }
 
     @MainActor

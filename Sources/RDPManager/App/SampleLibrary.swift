@@ -22,7 +22,10 @@ enum SampleLibrary {
             ))
         }
 
+        let emeaAdmin = CredentialProfile(name: "EMEA Admin", username: "admin", domain: "EMEA")
+        let namAdmin = CredentialProfile(name: "NAM Operations", username: "ops", domain: "NAM")
         let emea = folder("EMEA", color: .blue)
+        folders[folders.count - 1].defaults.credential = .shared(emeaAdmin.id)
         let emeaDC = folder("Datacenter", in: emea)
         let ws2025 = folder("Windows Server 2025", in: emeaDC)
         host("DC01", "dc01.emea.example.com", in: ws2025, os: "Windows Server 2025", tags: ["domain-controller"], favorite: true, color: .red)
@@ -36,6 +39,7 @@ enum SampleLibrary {
         host("PRG-WS01", "10.10.20.30", in: sites, os: "Windows 11 Pro")
 
         let nam = folder("NAM", color: .green)
+        folders[folders.count - 1].defaults.credential = .shared(namAdmin.id)
         let namDC = folder("Datacenter", in: nam)
         host("NYC-APP01", "nyc-app01.example.com", in: namDC, os: "Windows Server 2022")
         let namAzure = folder("Azure", in: nam)
@@ -55,6 +59,11 @@ enum SampleLibrary {
             }
             return connection
         }
-        return Inventory(folders: folders, connections: connections, expandedFolderIDs: [emea.id, emeaDC.id, ws2025.id])
+        return Inventory(
+            folders: folders,
+            connections: connections,
+            credentials: [emeaAdmin, namAdmin],
+            expandedFolderIDs: [emea.id, emeaDC.id, ws2025.id]
+        )
     }
 }

@@ -6,6 +6,21 @@ A native macOS Remote Desktop manager for administrators who look after many Win
 
 Built with Swift 6, SwiftUI and AppKit on [RDPKit](https://github.com/steelbrain/RDPKit), a pure-Swift RDP engine with hardware H.264 decoding.
 
+![Connection library with nested groups and the Overview table](docs/screenshots/overview.png)
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/inspector.png" alt="Inspector showing effective settings and where they are inherited from"></td>
+    <td><img src="docs/screenshots/editor.png" alt="Connection editor with inheritable settings"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/credentials.png" alt="Shared credentials backed by the Keychain"></td>
+    <td><img src="docs/screenshots/sign-in.png" alt="In-session sign-in prompt"></td>
+  </tr>
+</table>
+
+<sub>Screenshots use the built-in sample library; every host is a placeholder under example.com.</sub>
+
 ## Features
 - **Connection library:** unlimited nested groups, drag and drop, inline rename, favorites, recent, color labels, tags, notes, and full-text search across names, hosts, tags and group paths.
 - **Inheritance:** groups set defaults (credentials, display, clipboard, audio, reconnect, timeout) that hosts inherit or override. The UI shows where each value comes from.
