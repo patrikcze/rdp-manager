@@ -1,3 +1,4 @@
+import AppKit
 import RDPManagerCore
 import SwiftUI
 
@@ -19,6 +20,43 @@ extension TagColor {
     }
 
     var name: String { rawValue.capitalized }
+
+    /// A filled dot for menus. Menus draw SwiftUI symbols as monochrome templates and ignore
+    /// tint, so the swatch is a non-template bitmap.
+    var swatch: Image {
+        Self.swatchImage(NSColor(color))
+    }
+
+    static func swatchImage(_ color: NSColor) -> Image {
+        let image = NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+            NSColor.black.withAlphaComponent(0.18).setStroke()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).stroke()
+            return true
+        }
+        image.isTemplate = false
+        return Image(nsImage: image)
+    }
+}
+
+/// Picks a color label, with a checkmark on the current one. Used inside menus.
+struct ColorLabelPicker: View {
+    let current: TagColor?
+    let apply: @MainActor @Sendable (TagColor?) -> Void
+
+    var body: some View {
+        Picker("Color", selection: Binding(get: { current }, set: apply)) {
+            Text("None").tag(TagColor?.none)
+            Divider()
+            ForEach(TagColor.allCases, id: \.self) { color in
+                Label { Text(color.name) } icon: { color.swatch }
+                    .tag(TagColor?.some(color))
+            }
+        }
+        .pickerStyle(.inline)
+        .labelsHidden()
+    }
 }
 
 extension SessionPhase {
@@ -51,16 +89,28 @@ struct StatusDot: View {
     }
 }
 
-/// The monitor glyph for a host, tinted with its color label.
+/// A host's badge: a white monitor glyph on a rounded square in its color label (the accent
+/// color when it has none). A filled shape keeps its color on a selected sidebar row, where
+/// List restyles plain foreground colors.
 struct HostIcon: View {
     var color: TagColor?
     var size: CGFloat = 15
 
     var body: some View {
-        Image(systemName: "desktopcomputer")
-            .font(.system(size: size, weight: .regular))
-            .foregroundStyle(color?.color ?? .accentColor)
-            .symbolRenderingMode(.hierarchical)
+        let fill = color?.color ?? .accentColor
+        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+            .fill(fill.gradient)
+            .frame(width: size + 3, height: size + 3)
+            .overlay {
+                Image(systemName: "desktopcomputer")
+                    .font(.system(size: size * 0.62, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+                    .strokeBorder(.black.opacity(0.12), lineWidth: 0.5)
+            }
+            .accessibilityHidden(true)
     }
 }
 

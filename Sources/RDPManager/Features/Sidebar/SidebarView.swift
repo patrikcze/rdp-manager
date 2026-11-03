@@ -197,11 +197,13 @@ struct SidebarView: View {
                 Button(connection.isFavorite ? "Remove from Favorites" : "Add to Favorites") {
                     inventory.toggleFavorite(id)
                 }
-                Menu("Color") { colorMenu(current: connection.color) { color in
-                    var updated = connection
-                    updated.color = color
-                    inventory.update(updated)
-                } }
+                Menu("Color") {
+                    ColorLabelPicker(current: connection.color) { color in
+                        guard var updated = inventory.connection(id) else { return }
+                        updated.color = color
+                        inventory.update(updated)
+                    }
+                }
                 Divider()
                 Button("Copy Address") {
                     NSPasteboard.general.clearContents()
@@ -222,11 +224,13 @@ struct SidebarView: View {
                 Divider()
                 Button("Group Settings…") { model.editingFolder = folder }
                 Button("Rename") { startRename(.folder(id), folder.name) }
-                Menu("Color") { colorMenu(current: folder.color) { color in
-                    var updated = folder
-                    updated.color = color
-                    inventory.update(updated)
-                } }
+                Menu("Color") {
+                    ColorLabelPicker(current: folder.color) { color in
+                        guard var updated = inventory.folder(id) else { return }
+                        updated.color = color
+                        inventory.update(updated)
+                    }
+                }
                 Divider()
                 Button("Delete Group…", role: .destructive) { model.requestDelete(.folder(id)) }
             }
@@ -234,20 +238,6 @@ struct SidebarView: View {
             Button("Manage Credentials…") { model.sidebarSelection = .credentials }
         default:
             EmptyView()
-        }
-    }
-
-    @ViewBuilder
-    private func colorMenu(current: TagColor?, apply: @escaping (TagColor?) -> Void) -> some View {
-        Button("None") { apply(nil) }
-        Divider()
-        ForEach(TagColor.allCases, id: \.self) { color in
-            Button {
-                apply(color)
-            } label: {
-                Label(color.name, systemImage: current == color ? "checkmark.circle.fill" : "circle.fill")
-            }
-            .tint(color.color)
         }
     }
 

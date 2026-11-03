@@ -14,20 +14,20 @@ enum SampleLibrary {
             return folder
         }
 
-        func host(_ name: String, _ address: String, in parent: Folder, os: String, tags: [String] = [], favorite: Bool = false) {
+        func host(_ name: String, _ address: String, in parent: Folder, os: String, tags: [String] = [], favorite: Bool = false, color: TagColor? = nil) {
             connections.append(Connection(
                 name: name, host: address, folderID: parent.id,
                 sortIndex: connections.count(where: { $0.folderID == parent.id }),
-                tags: tags, isFavorite: favorite, operatingSystemLabel: os
+                tags: tags, isFavorite: favorite, color: color, operatingSystemLabel: os
             ))
         }
 
         let emea = folder("EMEA", color: .blue)
         let emeaDC = folder("Datacenter", in: emea)
         let ws2025 = folder("Windows Server 2025", in: emeaDC)
-        host("DC01", "dc01.emea.example.com", in: ws2025, os: "Windows Server 2025", tags: ["domain-controller"], favorite: true)
+        host("DC01", "dc01.emea.example.com", in: ws2025, os: "Windows Server 2025", tags: ["domain-controller"], favorite: true, color: .red)
         host("APP01", "app01.emea.example.com", in: ws2025, os: "Windows Server 2025", tags: ["app"])
-        host("SQL01", "sql01.emea.example.com", in: ws2025, os: "Windows Server 2025", tags: ["sql"])
+        host("SQL01", "sql01.emea.example.com", in: ws2025, os: "Windows Server 2025", tags: ["sql"], color: .orange)
         let ws2022 = folder("Windows Server 2022", in: emeaDC)
         host("FS01", "fs01.emea.example.com", in: ws2022, os: "Windows Server 2022", tags: ["file"])
         let emeaAzure = folder("Azure", in: emea)

@@ -54,7 +54,8 @@ struct ConnectionEditor: View {
                     Picker("Color", selection: $connection.color) {
                         Text("Default").tag(TagColor?.none)
                         ForEach(TagColor.allCases, id: \.self) { color in
-                            Text(color.name).tag(TagColor?.some(color))
+                            Label { Text(color.name) } icon: { color.swatch }
+                                .tag(TagColor?.some(color))
                         }
                     }
                     TextField("Notes", text: $connection.notes, axis: .vertical)
@@ -171,7 +172,10 @@ struct FolderEditor: View {
                     TextField("Name", text: $folder.name)
                     Picker("Color", selection: $folder.color) {
                         Text("Default").tag(TagColor?.none)
-                        ForEach(TagColor.allCases, id: \.self) { Text($0.name).tag(TagColor?.some($0)) }
+                        ForEach(TagColor.allCases, id: \.self) { color in
+                            Label { Text(color.name) } icon: { color.swatch }
+                                .tag(TagColor?.some(color))
+                        }
                     }
                     TextField("Notes", text: $folder.notes, axis: .vertical)
                         .lineLimit(2 ... 6)

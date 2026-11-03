@@ -18,6 +18,8 @@ final class AppModel {
     var sidebarSelection: SidebarSelection? = .allConnections
     var searchText = ""
     var isInspectorPresented = false
+    /// Launched with `-SampleLibraryInMemory`: nothing is saved, passwords included.
+    let isInMemorySampleMode = ProcessInfo.processInfo.arguments.contains("-SampleLibraryInMemory")
 
     /// Sheets the main window presents.
     var editingConnection: ConnectionEditorRequest?

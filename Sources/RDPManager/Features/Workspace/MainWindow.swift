@@ -20,6 +20,9 @@ struct MainWindow: View {
         }
         .searchable(text: $model.searchText, placement: .sidebar, prompt: "Search connections")
         .toolbar { MainToolbar() }
+        .onChange(of: model.sidebarSelection) { _, selection in
+            showContent(for: selection)
+        }
         .onChange(of: model.workspace.isFocusMode) { _, focus in
             withAnimation(.snappy) {
                 columnVisibility = focus ? .detailOnly : .all
@@ -58,6 +61,19 @@ struct MainWindow: View {
                     model.alert = AppAlert(title: "Quick Connect", message: error)
                 }
             }
+        }
+    }
+
+    /// What the sidebar selects is shown: a host with an open session shows that session;
+    /// anything else (a group, a smart list, Credentials, a host without a session) shows
+    /// the Overview, even while a session tab is in front.
+    private func showContent(for selection: SidebarSelection?) {
+        let workspace = model.workspace
+        if case let .connection(id) = selection,
+           let session = workspace.sessions(for: id).first(where: { workspace.detachedSessionIDs.contains($0.id) == false }) {
+            workspace.selectedTab = .session(session.id)
+        } else if selection != nil {
+            workspace.selectedTab = .overview
         }
     }
 }
@@ -116,6 +132,9 @@ struct WorkspaceView: View {
     var body: some View {
         let workspace = model.workspace
         VStack(spacing: 0) {
+            if model.isInMemorySampleMode {
+                SampleModeBanner()
+            }
             if workspace.isFocusMode == false || workspace.selectedSession == nil {
                 TabStrip()
                 Divider()
@@ -140,5 +159,23 @@ struct WorkspaceView: View {
 
     private var title: String {
         model.workspace.selectedSession?.title ?? "RDP Manager"
+    }
+}
+
+/// Shown while the app runs on the in-memory sample library, so nobody mistakes it for their
+/// own: nothing added here survives quitting, passwords included.
+private struct SampleModeBanner: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+            Text("Sample library in memory — nothing you add or save here is kept after you quit, and passwords are not stored in the Keychain.")
+                .lineLimit(2)
+            Spacer(minLength: 0)
+        }
+        .font(.callout)
+        .foregroundStyle(.black.opacity(0.85))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(Color.yellow)
     }
 }

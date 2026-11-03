@@ -21,9 +21,9 @@ Status as of 0.1.0. "Not verified live" means the code path exists and builds, b
 - **Keyboard layout follow-up.** The Windows layout is announced from the Mac's input source when connecting. Windows applies it only to new sessions, not to sessions it reconnects you to.
 
 ## Not verified live yet
-No Windows host was available in the development environment. These paths are implemented but unverified against a server:
+Verified so far: NLA sign-in and desktop rendering against Windows 11 (Parallels VM). Still unverified against a server:
 
-- Successful NLA sign-in, rendering, keyboard and pointer input
+- Keyboard and pointer input in depth (shortcuts, Czech layout, dead keys)
 - Dynamic resolution and HiDPI scaling, and moving between displays
 - Clipboard in both directions, remote audio playback
 - Certificate trust prompt and changed-certificate detection

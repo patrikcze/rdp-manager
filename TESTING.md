@@ -30,7 +30,7 @@ Last run (2026-11-03, macOS 27.2, Xcode 27.2, Swift 6.4.2, Apple Silicon): **32 
 | Restart application → profiles restored | PASS | persistence round-trip test |
 | Windows Server 2025 connection | NOT TESTED | no host available |
 | Windows Server 2022 connection | NOT TESTED | no host available |
-| Windows 11 connection | NOT TESTED | no host available |
+| Windows 11 connection | PASS | 2026-11-03, Windows 11 in a local Parallels VM, NLA sign-in from the in-app prompt, desktop rendered in a tab (user screenshot); input/clipboard not yet reported |
 | Invalid certificate → warning and trust decision | NOT TESTED live | code path in `RemoteSession.received` |
 | Multiple sessions independent | NOT TESTED live | separate engine, canvas and state per session by construction |
 | Window resize / fullscreen | NOT TESTED live | |
