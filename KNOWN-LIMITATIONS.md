@@ -15,6 +15,7 @@ Status as of 0.2.0. "Not verified live" means the code path exists and builds, b
 - **Split view of several sessions** and **session thumbnails**.
 - **Reachability checks.** The sidebar shows no "online" state. Status dots reflect only sessions you opened.
 - **App Sandbox.** See SECURITY.md.
+- **⌘C, ⌘V and other Mac editing shortcuts** go to Windows as Win+C, Win+V… while "Send ⌘ shortcuts to remote" is on. Use Control+C / Control+V, or turn the setting off. Mapping them to Ctrl, as Microsoft's client does, is planned.
 - **Keyboard layout of reconnected sessions.** The Mac's layout is announced when connecting, and Windows applies it only to new sessions.
 - **Intel Macs.** The build is Apple Silicon only.
 

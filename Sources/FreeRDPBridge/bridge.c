@@ -36,6 +36,7 @@ struct rm_session {
     DispClientContext *disp;
     CliprdrClientContext *cliprdr;
     char *local_clipboard; // UTF-8 text offered to the server
+    rm_security requested_security;
     uint32_t requested_format;
 };
 
@@ -306,6 +307,14 @@ static BOOL rm_pre_connect(freerdp *instance) {
 }
 
 static BOOL rm_post_connect(freerdp *instance) {
+    rm_session *owner = owner_of(instance->context);
+    // Defense in depth: never continue on Standard RDP Security unless it was chosen, whatever
+    // the negotiation ended with.
+    if (owner && owner->requested_security != RM_SECURITY_RDP &&
+        freerdp_settings_get_uint32(instance->context->settings, FreeRDP_SelectedProtocol) == 0) {
+        freerdp_set_last_error_log(instance->context, FREERDP_ERROR_SECURITY_NEGO_CONNECT_FAILED);
+        return FALSE;
+    }
     if (!gdi_init(instance, PIXEL_FORMAT_BGRA32))
         return FALSE;
     rdpContext *context = instance->context;
@@ -432,10 +441,12 @@ static bool apply_config(rdpSettings *settings, const rm_config *config) {
     if (config->keyboard_layout)
         ok = ok && freerdp_settings_set_uint32(settings, FreeRDP_KeyboardLayout, config->keyboard_layout);
 
-    // Security layer: every protocol the user allowed, negotiated strongest first.
+    // Security layer: every protocol the user allowed, negotiated strongest first. Standard RDP
+    // Security (no server authentication, RC4) only when explicitly chosen: offering it in
+    // automatic mode would let anyone in the middle downgrade the connection to it.
     const bool nla = config->security == RM_SECURITY_AUTO || config->security == RM_SECURITY_NLA;
     const bool tls = config->security == RM_SECURITY_AUTO || config->security == RM_SECURITY_TLS;
-    const bool rdp = config->security == RM_SECURITY_AUTO || config->security == RM_SECURITY_RDP;
+    const bool rdp = config->security == RM_SECURITY_RDP;
     ok = ok && freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, nla) &&
          freerdp_settings_set_bool(settings, FreeRDP_TlsSecurity, tls) &&
          freerdp_settings_set_bool(settings, FreeRDP_RdpSecurity, rdp) &&
@@ -523,6 +534,7 @@ rm_session *rm_session_new(const rm_config *config, const rm_callbacks *callback
         return NULL;
     pthread_mutex_init(&session->lock, NULL);
     session->callbacks = *callbacks;
+    session->requested_security = config->security;
 
     RDP_CLIENT_ENTRY_POINTS entry;
     rm_client_entry(&entry);

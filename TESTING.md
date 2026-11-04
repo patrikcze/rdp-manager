@@ -45,7 +45,8 @@ Last run (2026-11-04, macOS 27.2, Xcode 27.2, Swift 6.4.2, Apple Silicon): **49 
 | Sign Out of Windows | NOT TESTED live | Same Run path as verified typing |
 | Invalid/changed certificate prompt | NOT TESTED live | |
 | Multiple sessions, resize, full screen | NOT TESTED live | |
-| Clipboard both directions | NOT TESTED live | |
+| Control+C in a Windows app → Mac clipboard | PASS | 2026-11-04, both engines: Notepad, Control+A then Control+C sent as real macOS key events through the app; text arrived on the Mac clipboard |
+| Clipboard Mac → Windows | NOT TESTED live | |
 | Network interruption → reconnect | NOT TESTED live | Policy unit-tested |
 
 ## Live testing checklist
@@ -59,4 +60,4 @@ Last run (2026-11-04, macOS 27.2, Xcode 27.2, Swift 6.4.2, Apple Silicon): **49 
 8. Disable Wi-Fi for 10 s: the tab should show "Reconnecting (1/3)" and recover.
 9. Enter a wrong password: you should be asked again, with no loop.
 
-Debug builds accept `-QuickConnect host`, `-Engine rdpKit|freeRDP`, `-Security …`, `-Printers`, `-SmartCards` and `-RunInSession "command"`. With `RDPM_LIVE_USER`/`RDPM_LIVE_PASSWORD` set, they answer the sign-in prompt. These hooks don't exist in release builds.
+Debug builds accept `-QuickConnect host`, `-Engine rdpKit|freeRDP`, `-Security …`, `-Printers`, `-SmartCards`, `-RunInSession "command"` and `-SimulateKeys "h i ctrl+a ctrl+c"`. The last one posts real macOS key events through the app's input path. With `RDPM_LIVE_USER`/`RDPM_LIVE_PASSWORD` set, they answer the sign-in prompt. These hooks don't exist in release builds.
