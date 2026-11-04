@@ -42,3 +42,6 @@ playground.xcworkspace
 .env
 .env.*
 *.local
+
+# FreeRDP source, build and install (Scripts/build-freerdp.sh)
+ThirdParty/

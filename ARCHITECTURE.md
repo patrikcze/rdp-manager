@@ -3,6 +3,8 @@
 ```
 Package.swift
 Sources/
+  FreeRDPBridge/             C API over FreeRDP 3 (rm_session_*): connection, GDI frames,
+                             input, Display Control, text clipboard, device channels
   RDPManagerCore/            Pure Swift, no UI, no RDP engine — fully unit-tested
     Models/                  Inventory, Folder, Connection, CredentialProfile,
                              ConnectionSettings (inheritable), HostAddress
@@ -15,12 +17,19 @@ Sources/
   RDPManager/                The macOS app (executable target)
     App/                     @main, AppModel, Workspace (open sessions, tabs,
                              windows), commands, sample library
-    Backend/                 RDPKit integration — the only code that touches the engine
-      RemoteSession          one connection: lifecycle, credentials, cert gate,
-                             reconnect, resize, clipboard, audio, metrics
+    Backend/                 the only code that touches an RDP engine
+      RemoteSession          one connection, engine-neutral: credentials, cert decision,
+                             reconnect policy, sign-out, UI state
+      SessionEngine          protocol both engines implement (start/stop/input/events)
+      RDPKitEngine           RDPKit: H.264 via VideoToolbox, NTLM, clipboard, audio, drives
       RemoteDesktopCanvas    RDPKit video view + input view (AppKit)
       SessionEndMapping      RDPConnectionFailure → SessionEnd / re-prompt
-      CertificateTrustStore  user-trusted certs (RDPKit TOFU identifiers)
+      FreeRDPEngine          FreeRDP: Kerberos, Standard RDP Security, printers,
+                             smart cards, microphone, USB; FreeRDPConnection runs the
+                             C session on its own thread
+      FreeRDPCanvas          framebuffer layer, keyboard/pointer/scroll, remote cursor
+      FreeRDPEndMapping      FreeRDP error + Set Error Info → SessionEnd / re-prompt
+      CertificateTrustStore  user-trusted certs, shared by both engines
       CredentialService      Keychain calls off the main actor
     DesignSystem/            colors, status dot, small shared views
     Features/                Sidebar, Workspace (window, tabs, overview table),
@@ -28,8 +37,12 @@ Sources/
                              Inspector, Editors, Credentials, QuickConnect, Settings
 Tests/
   RDPManagerCoreTests/       unit tests (Swift Testing)
-  RDPEngineIntegrationTests/ real RDPKit runs against local sockets
-Scripts/build-app.sh         builds and signs "RDP Manager.app"
+  RDPEngineIntegrationTests/ real RDPKit runs against local sockets, FreeRDP mapping,
+                             opt-in live FreeRDP sign-in
+ThirdParty/                  FreeRDP source/build/install (not checked in)
+Scripts/build-freerdp.sh     builds pinned FreeRDP 3.32.2 with the features used
+Scripts/build-app.sh         builds, bundles libraries and signs "RDP Manager.app"
+Scripts/make-dmg.sh          drag-to-Applications DMG (signs + notarizes with a Developer ID)
 Scripts/render-icon.swift    renders the app icon
 ```
 
@@ -45,6 +58,8 @@ Scripts/render-icon.swift    renders the app icon
 - `connection:<uuid>` for a host's own identity
 
 `CredentialPlan` turns an assignment into "read Keychain, then prompt" or "prompt". Passwords typed at a prompt are saved only after the server verified them over NLA (`credentialsVerifiedBeforeActivation`).
+
+**Engines.** `EngineChoice` (core, tested) picks RDPKit unless a setting needs FreeRDP: Standard RDP Security, Kerberos, printers, smart cards, microphone or USB. A connection may force either engine. Both engines implement `SessionEngine` and report the same events (certificate seen/refused, activated, desktop shown, statistics, ended), so the session controller, prompts and reconnect policy are shared. FreeRDP's C callbacks reach Swift through an opaque pointer to `FreeRDPConnection`, which copies dirty framebuffer rectangles under a lock and coalesces them into one `CGImage` per main-queue turn.
 
 **Sessions.** `RemoteSession` is `@MainActor @Observable`. RDPKit's blocking `run` executes on the engine's own thread inside `RDPLiveSession`. Frames are decoded off the main thread and delivered in order to the main queue. Handlers hold the session weakly through `recipient`, so a closed tab is not kept alive. Each session owns its own canvas, clipboard bridge, audio player and metrics store, so sessions are fully independent.
 

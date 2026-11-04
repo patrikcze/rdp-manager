@@ -1,33 +1,45 @@
 # Known Limitations
 
-Status as of 0.1.0. "Not verified live" means the code path exists and builds, but has not been exercised against a real Windows host yet. See TESTING.md.
+Status as of 0.2.0. "Not verified live" means the code path exists and builds, but hasn't been exercised against a real server. See TESTING.md.
 
-## Not supported by the engine (RDPKit 0.7.0)
-- **RD Gateway**: hosts behind a gateway need a VPN. `.rdp` imports warn about gateway settings.
-- **Kerberos**: authentication uses NTLM through CredSSP. Domains that disable NTLM cannot be reached.
-- **Entra ID (AAD) sign-in, smart cards, Windows Hello**: not available.
-- **RemoteApp**: imports warn and open the full desktop instead.
-- **Printer, USB, serial, smart card and microphone redirection**: not available.
-- **Standard RDP Security (non-TLS)**: refused by design.
+## Not supported
+- **Serial port redirection.** FreeRDP disables it on macOS (its serial layer uses Linux-only ioctls). A macOS port is planned. See RDP-BACKEND-DECISION.md.
+- **RD Gateway and RemoteApp.** Not required, so not built. `.rdp` imports warn about them.
+- **Entra ID (AAD) sign-in.** FreeRDP supports it, but RDP Manager doesn't yet implement the browser sign-in it needs.
+- **Smart card *logon*.** Smart cards and YubiKeys are redirected for use inside Windows, but you can't sign in to Windows with them yet.
+- **H.264 on FreeRDP connections.** FreeRDP connections render RemoteFX/progressive in software. RDPKit connections use hardware H.264.
+- **Clipboard on FreeRDP connections** is text only. RDPKit connections also carry images, rich text and files.
 
-## Not implemented in the app yet
-- **Signing out of the remote Windows session.** Disconnect leaves the Windows session running on the server, and the UI says so. To sign out, use the Start menu inside the session.
-- **Multi-monitor RDP layouts.** A session uses one window. When the server reports several monitors, automatic resizing pauses instead of merging them.
+## Not implemented yet
+- **Multi-monitor RDP layouts.** A session uses one window. When the server reports several monitors, automatic resizing pauses.
 - **Split view of several sessions** and **session thumbnails**.
-- **Drive redirection UI.** The engine supports it, but there are no settings for it yet.
-- **Ctrl+Alt+End as a shortcut.** Use Session › Send Keys › Ctrl+Alt+Del or the inspector button.
 - **Reachability checks.** The sidebar shows no "online" state. Status dots reflect only sessions you opened.
 - **App Sandbox.** See SECURITY.md.
-- **Keyboard layout follow-up.** The Windows layout is announced from the Mac's input source when connecting. Windows applies it only to new sessions, not to sessions it reconnects you to.
+- **⌘C, ⌘V and other Mac editing shortcuts** go to Windows as Win+C, Win+V… while "Send ⌘ shortcuts to remote" is on. Use Control+C / Control+V, or turn the setting off. Mapping them to Ctrl, as Microsoft's client does, is planned.
+- **Keyboard layout of reconnected sessions.** The Mac's layout is announced when connecting, and Windows applies it only to new sessions.
+- **Intel Macs.** The build is Apple Silicon only.
+
+## Sign-out works through the Run dialog
+Session › Sign Out of Windows… opens Run (Win+R), types `logoff` and presses Enter. RDP has no client sign-out message. If policy disables Run, the session stays connected and RDP Manager says so; sign out from the Start menu instead.
 
 ## Not verified live yet
-Verified so far: NLA sign-in and desktop rendering against Windows 11 (Parallels VM). Still unverified against a server:
+Verified against Windows 11 (Parallels VM) on 2026-11-04:
 
-- Keyboard and pointer input in depth (shortcuts, Czech layout, dead keys)
-- Dynamic resolution and HiDPI scaling, and moving between displays
-- Clipboard in both directions, remote audio playback
-- Certificate trust prompt and changed-certificate detection
-- Automatic reconnect after a real network interruption
-- Detached session windows and full-screen mode with a live session
+- NLA sign-in and rendering on both engines
+- Printer redirection
+- Shared trust store
+- Typing through Run
+- Wrong-password handling
 
-Pointer mapping, keyboard translation, codecs, clipboard bridging and certificate evaluation are RDPKit components with their own tests. The app wires them the way RDPKit's reference client does.
+Still unverified:
+
+- **Kerberos** (no domain available), including KDC proxy.
+- **Smart card readers and YubiKeys:** the channel is active, but no reader was attached during testing.
+- **USB device redirection.**
+- **Microphone redirection.**
+- **Standard RDP Security against a server that allows it:** Windows 11 refuses it by default, and the refusal message was verified.
+- Keyboard and pointer input in depth (shortcuts, Czech layout, dead keys).
+- HiDPI scaling when moving between displays.
+- Certificate prompt for a changed certificate.
+- Automatic reconnect after a real network interruption.
+- Detached windows and full screen with a live session.

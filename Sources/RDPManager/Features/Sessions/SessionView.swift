@@ -49,7 +49,7 @@ struct RemoteDesktopHost: NSViewRepresentable {
     }
 
     func updateNSView(_ container: NSView, context _: Context) {
-        if session.canvas.superview !== container {
+        if session.surface.superview !== container {
             attach(to: container)
         }
     }
@@ -61,7 +61,7 @@ struct RemoteDesktopHost: NSViewRepresentable {
     }
 
     private func attach(to container: NSView) {
-        let canvas = session.canvas
+        let canvas = session.surface
         canvas.removeFromSuperview()
         canvas.frame = container.bounds
         canvas.autoresizingMask = [.width, .height]

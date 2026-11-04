@@ -57,7 +57,7 @@ enum SessionEndMapping {
         case .noConnectionConfirm:
             return failed(.network, "No Remote Desktop service", "Something answered on this port, but it is not a Remote Desktop server, or a firewall or connection limit blocked it.")
         case .unsupportedSecurityProtocol:
-            return failed(.unsupported, "Unsupported security", "The server only offers Standard RDP Security, which RDP Manager does not use. Enable TLS or NLA on the server.")
+            return failed(.unsupported, "Unsupported security", "The server only offers Standard RDP Security. Choose “Standard RDP Security” under Security in this connection's settings, or enable TLS or NLA on the server.")
         case .tls:
             return failed(.network, "Secure connection failed", "The TLS handshake failed or the server's certificate could not be read.")
         case .tlsKeyUsageIncorrect:

@@ -81,12 +81,12 @@ final class Workspace {
     }
 
     /// Connects to a typed address without saving it.
-    func quickConnect(_ address: HostAddress) {
+    func quickConnect(_ address: HostAddress, settings: ResolvedSettings = .builtIn) {
         let session = RemoteSession(
             connectionID: nil,
             title: address.host,
             address: address,
-            settings: .builtIn,
+            settings: settings,
             profiles: inventory.credentials,
             credentials: credentials,
             trustStore: trustStore
