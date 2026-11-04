@@ -57,9 +57,12 @@ struct MainWindow: View {
             // `RDPManager -QuickConnect host[:port]` opens a session at launch.
             let arguments = ProcessInfo.processInfo.arguments
             if let index = arguments.firstIndex(of: "-QuickConnect"), index + 1 < arguments.count {
-                if let error = model.quickConnect(arguments[index + 1]) {
+                if let error = model.quickConnect(arguments[index + 1], settings: Self.launchSettings(arguments)) {
                     model.alert = AppAlert(title: "Quick Connect", message: error)
                 }
+                #if DEBUG
+                autoSignInForTesting()
+                #endif
             }
             #if DEBUG
             if let index = arguments.firstIndex(of: "-Show"), index + 1 < arguments.count {
@@ -69,7 +72,49 @@ struct MainWindow: View {
         }
     }
 
+    /// Quick Connect settings from launch arguments: `-Engine rdpKit|freeRDP|automatic`,
+    /// `-Security automatic|nla|tls|standardRDP`, `-Authentication ntlm|kerberos|kerberosOnly`,
+    /// `-Printers`, `-SmartCards`.
+    private static func launchSettings(_ arguments: [String]) -> ResolvedSettings {
+        func value(_ flag: String) -> String? {
+            arguments.firstIndex(of: flag).flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
+        }
+        var settings = ResolvedSettings.builtIn
+        if let engine = value("-Engine").flatMap(EnginePreference.init(rawValue:)) { settings.enginePreference = engine }
+        if let security = value("-Security").flatMap(SecurityMode.init(rawValue:)) { settings.security = security }
+        if let auth = value("-Authentication").flatMap(AuthenticationMode.init(rawValue:)) { settings.authentication = auth }
+        settings.printersEnabled = arguments.contains("-Printers")
+        settings.smartCardsEnabled = arguments.contains("-SmartCards")
+        return settings
+    }
+
     #if DEBUG
+    /// Debug builds only: answers the Quick Connect sign-in prompt from RDPM_LIVE_USER and
+    /// RDPM_LIVE_PASSWORD, for end-to-end tests against a test host. Nothing is saved.
+    private func autoSignInForTesting() {
+        let environment = ProcessInfo.processInfo.environment
+        guard let user = environment["RDPM_LIVE_USER"], let password = environment["RDPM_LIVE_PASSWORD"],
+              let session = model.workspace.sessions.last
+        else { return }
+        Task { @MainActor in
+            for _ in 0 ..< 50 {
+                try? await Task.sleep(for: .milliseconds(100))
+                if case .awaitingCredentials = session.phase {
+                    session.submitCredentials(username: user, domain: "", password: password, save: false)
+                    break
+                }
+            }
+            // `-RunInSession <command>`: once the desktop shows, run it through Win+R.
+            let arguments = ProcessInfo.processInfo.arguments
+            guard let index = arguments.firstIndex(of: "-RunInSession"), index + 1 < arguments.count else { return }
+            for _ in 0 ..< 100 where session.phase.isActive == false {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            try? await Task.sleep(for: .seconds(2))
+            await session.runCommand(arguments[index + 1])
+        }
+    }
+
     /// `-Show inspector|editor|group|credentials` puts the window in a state for README
     /// screenshots (with `-SampleLibraryInMemory`). Debug builds only.
     private func showForScreenshot(_ scene: String) {

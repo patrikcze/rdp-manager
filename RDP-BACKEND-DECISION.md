@@ -1,58 +1,53 @@
 # RDP Backend Decision
 
-**Decision:** RDPKit 0.7.0 (pure Swift, MIT), pinned exactly in `Package.swift`.
-**Date:** 2026-11-03. **Re-evaluate:** before bumping RDPKit, or when RD Gateway / Kerberos become required.
+**Decision (revised 2026-11-04): two engines behind one session controller.**
 
-## Candidates examined
+- **RDPKit 0.7.0** ([steelbrain/RDPKit](https://github.com/steelbrain/RDPKit), pure Swift, MIT) runs every connection it can.
+- **FreeRDP 3.32.2** ([FreeRDP/FreeRDP](https://github.com/FreeRDP/FreeRDP), C, Apache-2.0) runs connections that need what only it has: Kerberos, Standard RDP Security, and printer, smart card, microphone and USB redirection.
 
-Sources were read directly (shallow clones of each repository's `main` on 2026-11-03), not taken from marketing pages.
+Both versions are pinned exactly: RDPKit in `Package.swift`, FreeRDP in `Scripts/build-freerdp.sh`.
 
-| | **RDPKit** (steelbrain/RDPKit) | **FreeRDP 3.x** (FreeRDP/FreeRDP) | **RDPeek** (steelbrain/RDPeek) |
-|---|---|---|---|
-| What it is | Swift 6 RDP client library + AppKit views | C client library + reference clients | macOS app built on RDPKit |
-| Version / activity | 0.7.0 tag; commit 2026-11-02 | 3.32.2 stable (Homebrew) | 1.3.0; commit 2026-11-02 |
-| License | MIT | Apache-2.0 | MIT |
-| Size | ~40k lines source, ~48k lines tests | very large C codebase + deps | ~6k lines app code |
-| Apple Silicon / macOS | Native SwiftPM, macOS 13+ | Builds; Homebrew formula is X11/SDL; Mac client lags | macOS 14+ |
-| TLS + cert inspection | SwiftNIO SSL, system trust eval, SHA-256, TOFU store with change detection | Yes (OpenSSL) | Uses RDPKit |
-| NLA / CredSSP | Yes, NTLM; refuses CredSSP < 5 (CVE-2018-0886) | Yes, NTLM + Kerberos | — |
-| Kerberos | **No** (grep: no implementation) | Yes | — |
-| RD Gateway | **No** | Yes (HTTP, RPC, websocket) | — |
-| Graphics | RDPGFX 8.0–10.7, AVC420/AVC444 via VideoToolbox, RemoteFX, ClearCodec, planar, NSCodec | Broad, mostly software or FFmpeg | — |
-| Rendering on Mac | `AVSampleBufferDisplayLayer`, zero-copy CoreVideo, display-link pacing | App must copy framebuffer into a layer itself | — |
-| Dynamic resize / HiDPI | Display Control channel, scale factors | Yes | — |
-| Keyboard | Scancode + Unicode, Mac layout → KLID mapping, dead keys, modifier sync on focus loss | App must implement Mac mapping | — |
-| Clipboard | Text/HTML/RTF/bitmap/files, pasteboard bridge | Yes | — |
-| Audio out / drives | RDPSND; drive redirection | Yes, plus printers, smartcard, USB | — |
-| Typed failures | `RDPConnectionFailure` enum, NTSTATUS, termination categories | Error codes | — |
-| Security history | Young (2026), no published advisories found; small attack surface in memory-safe Swift | Regular CVE batches in 2024–2025 (memory safety in C parsers) | — |
-| Integration effort | Low: Swift APIs, main-thread delivery (`RDPLiveSession`) | High: C shim, callbacks, framebuffer, input mapping, dylib bundling/signing of OpenSSL, FFmpeg… | Reference only |
+## Why two engines
 
-## Why RDPKit
+The first version used RDPKit alone. The user requires Kerberos, Standard RDP Security, and printer, smart card (YubiKey), USB and serial redirection. RDPKit has none of these, and they can't be added from outside the library. FreeRDP 3 has them, except serial ports on macOS (see below). It costs software rendering, C code and bundled libraries. Keeping RDPKit for everything else preserves hardware H.264, VideoToolbox rendering and its memory-safe parser on most connections.
 
-1. **Verified, not assumed:** the engine-integration tests in `Tests/RDPEngineIntegrationTests` run real RDPKit connection attempts and check its typed failures. Its own test suite (48k lines) covers protocol parsing.
-2. **Memory safety** in a privileged admin tool that parses untrusted server data. FreeRDP's recurring C parser CVEs are the main risk we avoid.
-3. **Mac-native presentation:** hardware H.264 decode and display-link pacing are built in. FreeRDP would need a custom renderer to match.
-4. **Correct security defaults:** it refuses outdated CredSSP, evaluates the certificate *before* credentials are sent, and has a trust-on-first-use store that detects changed certificates.
-5. **Distribution:** a single Swift package. There are no C dylibs to bundle, sign and notarize, and no OpenSSL to patch.
+## Comparison
 
-## What we give up (documented in KNOWN-LIMITATIONS.md)
+| | **RDPKit 0.7.0** | **FreeRDP 3.32.2** |
+|---|---|---|
+| Language / license | Swift 6 / MIT | C / Apache-2.0 |
+| Maturity | Young (created 2026-06, single maintainer) | Mature, widely deployed, regular security advisories |
+| NLA | NTLM | NTLM and Kerberos (MIT krb5) |
+| Standard RDP Security | No (refused) | Yes |
+| Graphics on Mac | RDPGFX with AVC420/AVC444 through VideoToolbox, zero-copy | GFX with RemoteFX/progressive, software GDI (no H.264 in our build) |
+| Clipboard | Text, HTML, RTF, images, files | Text (our bridge) |
+| Audio | Playback | Playback and microphone |
+| Drives | Yes | Yes |
+| Printers | No | Yes (CUPS: every Mac printer) |
+| Smart cards | No | Yes (PC/SC: YubiKey PIV, card readers) |
+| USB | No | Yes (urbdrc + libusb, by vendor:product ID) |
+| Serial ports | No | **No on macOS** (FreeRDP disables it on Apple) |
+| RD Gateway, RemoteApp | No | Yes (not used: not required) |
+| Entra ID | No | Yes, with a browser sign-in flow (not built yet) |
 
-- **RD Gateway**: not available. Hosts behind a gateway need a VPN.
-- **Kerberos**: NTLM only. Domain accounts still work over NTLM unless the domain disables it.
-- **Smart cards, Entra ID / AAD sign-in, RemoteApp, printer/USB redirection**: not available.
-- **Maturity**: RDPKit is 0.x. Its API changes between minor versions, so we pin exactly.
+## Engine choice
+
+`EngineChoice` in `RDPManagerCore` (unit-tested) decides per connection:
+
+- **Automatic:** RDPKit, unless the resolved settings ask for Standard RDP Security, Kerberos, printers, smart cards, microphone or USB. Then FreeRDP. The editor shows the result and why.
+- **Forced:** a connection or group can force either engine. If RDPKit is forced, the session says which settings it ignores.
+
+## Serial ports
+
+FreeRDP's serial channel needs `winpr/comm`. FreeRDP doesn't build it on Apple platforms, because parts of it use Linux-only ioctls. Supporting serial means porting those parts to macOS `termios`/IOKit, which is planned as a patch applied by `Scripts/build-freerdp.sh` (`Scripts/freerdp-patches/`). Until then, serial redirection is unavailable.
+
+## Integration
+
+- **`Sources/FreeRDPBridge`:** a small C API (`rm_session_*`) over FreeRDP. Swift never sees FreeRDP's types. It covers connection, GDI framebuffer, pointer shapes, input, Display Control resize, text clipboard and the device channels.
+- **`Backend/SessionEngine`:** the protocol both engines implement. `RemoteSession` keeps credentials, certificate decisions, reconnect policy and UI state for both.
+- **Certificates:** one trust store. FreeRDP's own known-hosts store is never used: the bridge always answers "accept once" or "reject". RDP Manager decides with macOS trust (SecTrust, leaf plus chain) and its trust-on-first-use store, before credentials are sent.
+- **Packaging:** `Scripts/build-app.sh` copies FreeRDP and its dependencies (OpenSSL 3, MIT Kerberos, libusb, cJSON) into `Contents/Frameworks`, relinks them to `@rpath` and signs them. The app needs nothing installed.
 
 ## RDPeek
 
-RDPeek is MIT-licensed and built by the same author on RDPKit. We read it as a reference for the RDPKit integration patterns: certificate gating in `onCertificate`, frame presenter wiring, and display-control resizing. `RemoteDesktopCanvas.swift` is adapted from its canvas view, with attribution in the file and in `THIRD-PARTY-NOTICES.md`. RDP Manager uses none of RDPeek's UI, assets or branding.
-
-## The backend seam
-
-The protocol integration lives in `Sources/RDPManager/Backend/`:
-
-- `RemoteSession` owns one RDPKit `RDPLiveSession` and exposes engine-neutral state (`SessionPhase`, `SessionEnd`, `CertificateIssue` from `RDPManagerCore`).
-- `SessionEndMapping` is the only place that interprets `RDPConnectionFailure`.
-- Views never import RDPKit, except the canvas host.
-
-A second engine (for example a FreeRDP backend for gateway-only hosts) would add a sibling `RemoteSession` implementation that produces the same core types. We deliberately did not build a speculative protocol/plugin layer before there is a second engine.
+RDPeek (MIT) was read as a reference for RDPKit integration. `RemoteDesktopCanvas.swift` is adapted from it, with attribution in `THIRD-PARTY-NOTICES.md`.

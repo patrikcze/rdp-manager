@@ -120,10 +120,10 @@ final class AppModel {
         workspace.open(connectionID)
     }
 
-    func quickConnect(_ text: String) -> String? {
+    func quickConnect(_ text: String, settings: ResolvedSettings = .builtIn) -> String? {
         do {
             let address = try HostAddress.parse(text)
-            workspace.quickConnect(address)
+            workspace.quickConnect(address, settings: settings)
             return nil
         } catch {
             return error.localizedDescription

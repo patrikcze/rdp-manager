@@ -75,3 +75,62 @@ struct SessionPolicyTests {
         #expect(try store.password(for: account) == nil)
     }
 }
+
+@Suite("Engine choice")
+struct EngineChoiceTests {
+    @Test func plainConnectionsRunOnRDPKit() {
+        let choice = ResolvedSettings.builtIn.engine
+        #expect(choice.kind == .rdpKit)
+        #expect(choice.freeRDPReasons.isEmpty)
+    }
+
+    @Test(arguments: [
+        ConnectionSettings(security: .standardRDP),
+        ConnectionSettings(authentication: .kerberos),
+        ConnectionSettings(authentication: .kerberosOnly),
+        ConnectionSettings(printersEnabled: true),
+        ConnectionSettings(smartCardsEnabled: true),
+        ConnectionSettings(microphoneEnabled: true),
+        ConnectionSettings(usbDevices: ["1050:0407"]),
+    ])
+    func freeRDPOnlyFeaturesSelectFreeRDP(settings: ConnectionSettings) {
+        let choice = ResolvedSettings(settings).engine
+        #expect(choice.kind == .freeRDP)
+        #expect(choice.freeRDPReasons.count == 1)
+        #expect(choice.ignoredSettings.isEmpty)
+    }
+
+    @Test func forcedRDPKitReportsWhatItIgnores() {
+        let choice = ResolvedSettings(ConnectionSettings(smartCardsEnabled: true, engine: .rdpKit)).engine
+        #expect(choice.kind == .rdpKit)
+        #expect(choice.ignoredSettings == ["smart cards"])
+        #expect(ResolvedSettings(ConnectionSettings(engine: .freeRDP)).engine.kind == .freeRDP)
+    }
+
+    @Test func groupsCanTurnOnRedirectionForEveryHost() {
+        let group = ConnectionSettings(smartCardsEnabled: true)
+        let host = ConnectionSettings(printersEnabled: false).overlaying(group)
+        let resolved = ResolvedSettings(host)
+        #expect(resolved.smartCardsEnabled)
+        #expect(resolved.printersEnabled == false)
+        #expect(resolved.engine.kind == .freeRDP)
+    }
+
+    @Test(arguments: [("1050:0407", "1050:0407"), ("0x1050:0x407", "1050:0407"), ("ABCD:12", "abcd:0012")])
+    func usbIDsNormalize(input: String, expected: String) {
+        #expect(USBDeviceID.normalized(input) == expected)
+    }
+
+    @Test(arguments: ["1050", "zzzz:0001", "10500:1", "1:2:3", ""])
+    func badUSBIDsAreDropped(input: String) {
+        #expect(USBDeviceID.normalized(input) == nil)
+        #expect(ResolvedSettings(ConnectionSettings(usbDevices: [input])).usbDevices.isEmpty)
+    }
+
+    @Test func librariesFromBeforeTheseSettingsStillDecode() throws {
+        let old = #"{"clipboardEnabled": false, "display": {"matchWindow": {}}}"#
+        let settings = try JSONDecoder().decode(ConnectionSettings.self, from: Data(old.utf8))
+        #expect(settings.clipboardEnabled == false)
+        #expect(settings.security == nil && settings.smartCardsEnabled == nil)
+    }
+}

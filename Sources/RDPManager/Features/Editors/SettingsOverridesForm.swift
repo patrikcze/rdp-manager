@@ -1,3 +1,4 @@
+import AppKit
 import RDPManagerCore
 import SwiftUI
 
@@ -50,9 +51,64 @@ struct SettingsOverridesSections: View {
             }
         }
 
-        Section("Redirection") {
+        Section {
+            Picker("Security layer", selection: $settings.security) {
+                Text("Inherit (\(inherited.security.label))").tag(SecurityMode?.none)
+                Divider()
+                ForEach(SecurityMode.allCases, id: \.self) { Text($0.label).tag(SecurityMode?.some($0)) }
+            }
+            if resolved.security == .standardRDP {
+                Label("Standard RDP Security can't verify the server and uses weak RC4 encryption. Use it only for servers that offer nothing else.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+            Picker("Authentication", selection: $settings.authentication) {
+                Text("Inherit (\(inherited.authentication.label))").tag(AuthenticationMode?.none)
+                Divider()
+                ForEach(AuthenticationMode.allCases, id: \.self) { Text($0.label).tag(AuthenticationMode?.some($0)) }
+            }
+            if resolved.authentication != .ntlm {
+                TextField("KDC proxy URL", text: optionalText($settings.kerberosKDCProxyURL),
+                          prompt: Text(inherited.kerberosKDCProxyURL ?? "Optional, e.g. https://kdcproxy.example.com/KdcProxy"))
+            }
+        } header: {
+            Text("Security")
+        } footer: {
+            if resolved.authentication != .ntlm {
+                Text("Kerberos uses your user name and password to get a ticket from the domain's KDC, found through DNS, or through the KDC proxy.")
+            }
+        }
+
+        Section {
             InheritableToggle(title: "Clipboard", value: $settings.clipboardEnabled, inherited: inherited.clipboardEnabled)
             InheritableToggle(title: "Play remote audio", value: $settings.audioPlaybackEnabled, inherited: inherited.audioPlaybackEnabled)
+            InheritableToggle(title: "Microphone", value: $settings.microphoneEnabled, inherited: inherited.microphoneEnabled)
+            InheritableToggle(title: "Printers", value: $settings.printersEnabled, inherited: inherited.printersEnabled)
+            InheritableToggle(title: "Smart cards and security keys (YubiKey)", value: $settings.smartCardsEnabled, inherited: inherited.smartCardsEnabled)
+            TextField("USB devices", text: usbText, prompt: Text(inherited.usbDevices.isEmpty ? "Vendor:product IDs, e.g. 1050:0407" : inherited.usbDevices.joined(separator: ", ")))
+            HStack {
+                TextField("Shared folder", text: optionalText($settings.sharedFolderPath),
+                          prompt: Text(inherited.sharedFolderPath ?? "None"))
+                Button("Choose…", action: chooseFolder)
+            }
+        } header: {
+            Text("Devices and redirection")
+        } footer: {
+            Text("Printers are all printers set up on this Mac. Smart cards include every PC/SC reader, such as a YubiKey's PIV interface, for use inside Windows. The shared folder appears as \\\\tsclient\\Mac.")
+        }
+
+        Section {
+            Picker("Engine", selection: $settings.engine) {
+                Text("Inherit (\(inherited.enginePreference.label))").tag(EnginePreference?.none)
+                Divider()
+                ForEach(EnginePreference.allCases, id: \.self) { Text($0.label).tag(EnginePreference?.some($0)) }
+            }
+            LabeledContent("Runs on", value: engineSummary)
+        } header: {
+            Text("RDP engine")
+        } footer: {
+            Text("RDPKit renders with hardware H.264 and is used whenever it can be. FreeRDP adds Kerberos, Standard RDP Security, printers, smart cards, microphone and USB.")
         }
 
         Section("Behavior") {
@@ -63,6 +119,45 @@ struct SettingsOverridesSections: View {
                 Divider()
                 ForEach([10, 20, 30, 60, 120], id: \.self) { Text("\($0) seconds").tag(Int?.some($0)) }
             }
+        }
+    }
+
+    /// What this item resolves to with its own overrides, for warnings and the engine summary.
+    private var resolved: ResolvedSettings {
+        ResolvedSettings(settings, defaults: inherited)
+    }
+
+    private var engineSummary: String {
+        let choice = resolved.engine
+        switch choice.kind {
+        case .rdpKit:
+            return choice.ignoredSettings.isEmpty ? "RDPKit" : "RDPKit (ignores \(choice.ignoredSettings.joined(separator: ", ")))"
+        case .freeRDP:
+            return choice.freeRDPReasons.isEmpty ? "FreeRDP" : "FreeRDP, for \(choice.freeRDPReasons.joined(separator: ", "))"
+        }
+    }
+
+    private func optionalText(_ binding: Binding<String?>) -> Binding<String> {
+        Binding(get: { binding.wrappedValue ?? "" }, set: { binding.wrappedValue = $0.isEmpty ? nil : $0 })
+    }
+
+    private var usbText: Binding<String> {
+        Binding(
+            get: { settings.usbDevices?.joined(separator: ", ") ?? "" },
+            set: { text in
+                let ids = text.split(whereSeparator: { $0 == "," || $0 == " " }).map(String.init)
+                settings.usbDevices = ids.isEmpty ? nil : ids
+            }
+        )
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.message = "The server will be able to read, change and delete files in this folder."
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.sharedFolderPath = url.path
         }
     }
 

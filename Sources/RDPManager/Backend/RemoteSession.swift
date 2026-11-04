@@ -1,20 +1,7 @@
 import AppKit
 import Observation
 import RDPKit
-import RDPKitAppKit
 import RDPManagerCore
-
-/// Measured numbers of a live session, from RDPKit's render metrics. Nil means not measured.
-struct SessionStatistics: Equatable {
-    var framesPerSecond: Double?
-    var wireMegabitsPerSecond: Double?
-    var averageDecodeMilliseconds: Double?
-    var hardwareDecoding: Bool?
-    var codec: String?
-    var decodedFrames: Int
-    var failedDecodes: Int
-    var firstFrameMilliseconds: Double?
-}
 
 /// The prompt shown when a session needs credentials.
 struct CredentialPrompt: Equatable {
@@ -25,8 +12,9 @@ struct CredentialPrompt: Equatable {
     var saveAccount: SecretAccount?
 }
 
-/// One remote desktop connection: its RDPKit session, the surface that shows it, and the
-/// state the UI observes. Every session is independent; closing one leaves the others alone.
+/// One remote desktop connection and the state the UI observes: credentials, certificate
+/// decisions, reconnects and lifecycle, whatever engine runs it. Every session is
+/// independent; closing one leaves the others alone.
 @MainActor
 @Observable
 final class RemoteSession: Identifiable {
@@ -36,6 +24,7 @@ final class RemoteSession: Identifiable {
     private(set) var title: String
     let address: HostAddress
     private(set) var settings: ResolvedSettings
+    let engineChoice: EngineChoice
 
     private(set) var phase: SessionPhase = .idle
     private(set) var connectedAt: Date?
@@ -45,43 +34,30 @@ final class RemoteSession: Identifiable {
     private(set) var certificateSHA256: String?
     private(set) var certificateTrustedBySystem: Bool?
     private(set) var certificateTrustedByUser = false
+    /// The session runs on Standard RDP Security: nothing verifies the server.
+    private(set) var isUnverifiedServer = false
     private(set) var tlsProtocol: String?
     private(set) var credentialPrompt: CredentialPrompt?
     private(set) var statistics: SessionStatistics?
     private(set) var clipboardEnabled: Bool
     private(set) var lastNotice: String?
-    /// Engine stage while connecting, for diagnostics.
-    private(set) var connectionStage: String?
+    private(set) var isSigningOut = false
 
     /// Called once per connection that showed the desktop, to record "last connected".
     @ObservationIgnored var onDesktopShown: ((RemoteSession) -> Void)?
     /// Called when the user asked to save credentials and the server verified them.
     @ObservationIgnored var onVerifiedCredentials: ((RemoteSession, _ username: String, _ domain: String) -> Void)?
 
-    @ObservationIgnored let canvas = RemoteDesktopCanvas()
-    @ObservationIgnored private lazy var framePresenter = RDPFramePresenter(videoView: canvas.videoView)
+    @ObservationIgnored private let engine: SessionEngine
     @ObservationIgnored private let credentials: CredentialService
     @ObservationIgnored private let trustStore: CertificateTrustStore
     @ObservationIgnored private let profiles: [CredentialProfile]
     @ObservationIgnored private let reconnectPolicy = ReconnectPolicy()
-
-    @ObservationIgnored private var liveSession: RDPLiveSession?
-    @ObservationIgnored private var inputSession: RDPInputSession?
-    @ObservationIgnored private var displayControl: RDPDisplayControlSession?
-    @ObservationIgnored private var serverMonitorCount = 0
-    @ObservationIgnored private var lastSentDisplayRequest: RDPDisplayRequest?
-    @ObservationIgnored private var viewerSurface: (size: CGSize, scale: CGFloat)?
-    @ObservationIgnored private var resizeTask: Task<Void, Never>?
     @ObservationIgnored private var reconnectTask: Task<Void, Never>?
     @ObservationIgnored private var credentialTask: Task<Void, Never>?
-    @ObservationIgnored private var tickTask: Task<Void, Never>?
-    @ObservationIgnored private var clipboard: RDPPasteboardClipboard?
-    @ObservationIgnored private let audioPlayer = RDPAudioPlayer()
-    @ObservationIgnored private let metricsStore = RDPRenderMetricsStore()
-    @ObservationIgnored private var latestFrame: RDPGraphicsFrameSnapshot?
-    @ObservationIgnored private var frameMetadata: RDPFrameMetadata?
-    @ObservationIgnored private var hasPresentedFrame = false
-    @ObservationIgnored private var refusedCertificate: RDPServerCertificateInfo?
+    @ObservationIgnored private var signOutTask: Task<Void, Never>?
+    @ObservationIgnored private var refusedCertificate: CertificateIssue?
+    @ObservationIgnored private var isRunning = false
 
     /// The identity this attempt signs in with. The password stays in memory only for the
     /// session's lifetime, so Reconnect needs no new prompt; it is cleared when refused.
@@ -109,26 +85,23 @@ final class RemoteSession: Identifiable {
         self.credentials = credentials
         self.trustStore = trustStore
         clipboardEnabled = settings.clipboardEnabled
-        canvas.claimsCommandShortcuts = settings.sendsCommandShortcutsToRemote
-        canvas.onSurfaceChange = { [weak self] size, scale in
-            self?.viewerSurface = (size, scale)
-            self?.scheduleResize()
+        engineChoice = settings.engine
+        switch engineChoice.kind {
+        case .rdpKit:
+            engine = RDPKitEngine(trustStore: trustStore, sendsCommandShortcutsToRemote: settings.sendsCommandShortcutsToRemote)
+        case .freeRDP:
+            engine = FreeRDPEngine(trustStore: trustStore, sendsCommandShortcutsToRemote: settings.sendsCommandShortcutsToRemote)
         }
-        framePresenter.onShow = { [weak self] presentation in
-            self?.noteShown(presentation)
-        }
-        // The presenter paces frames to the display its clock view is on; the clock draws
-        // nothing but has to be in the window.
-        let clock = framePresenter.clockView
-        clock.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
-        canvas.addSubview(clock)
+        engine.delegate = self
     }
 
     var hostLabel: String {
         address.port == 3389 ? address.host : "\(address.host):\(address.port)"
     }
 
-    var hasInputFocus: Bool { canvas.hasInputFocus }
+    var surface: NSView { engine.surface }
+    var engineKind: RDPEngineKind { engine.kind }
+    var hasInputFocus: Bool { engine.hasInputFocus }
 
     // MARK: - Lifecycle
 
@@ -138,7 +111,9 @@ final class RemoteSession: Identifiable {
         guard isClosed == false else { return }
         cancelPendingWork()
         reconnectCount = 0
-        lastNotice = nil
+        lastNotice = engineChoice.ignoredSettings.isEmpty
+            ? nil
+            : "RDPKit can't redirect \(engineChoice.ignoredSettings.joined(separator: ", ")). Set the engine to Automatic or FreeRDP."
         if password.isEmpty == false || didAskForCredentials {
             startAttempt()
             return
@@ -176,10 +151,8 @@ final class RemoteSession: Identifiable {
     /// Credentials the user typed. `save` writes them to the Keychain once the server has
     /// verified them, never before.
     func submitCredentials(username: String, domain: String, password: String, save: Bool) {
-        let username = username.trimmingCharacters(in: .whitespacesAndNewlines)
-        let domain = domain.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.username = username
-        self.domain = domain
+        self.username = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.domain = domain.trimmingCharacters(in: .whitespacesAndNewlines)
         self.password = password
         saveVerifiedPasswordTo = save ? credentialPrompt?.saveAccount : nil
         credentialPrompt = nil
@@ -197,10 +170,45 @@ final class RemoteSession: Identifiable {
     /// signed out) until its policy ends it.
     func disconnect() {
         cancelPendingWork()
-        endLiveSession()
+        stopEngine()
         if case .ended = phase {} else {
             phase = .ended(.userDisconnected)
         }
+    }
+
+    /// Signs out of the Windows session: opens Run (Win+R), types `logoff` and presses Enter,
+    /// as an administrator would. The server then ends the connection, which shows as
+    /// "Signed out". Fails quietly where policy disables the Run dialog; the session stays.
+    func signOut() {
+        guard phase.isActive, isSigningOut == false else { return }
+        isSigningOut = true
+        lastNotice = "Signing out of the Windows session…"
+        signOutTask = Task { [weak self] in
+            guard let self else { return }
+            await runCommand("logoff")
+            try? await Task.sleep(for: .seconds(15))
+            // Still connected: the Run dialog was blocked or the command refused.
+            if Task.isCancelled == false, phase.isActive {
+                isSigningOut = false
+                lastNotice = "The session did not sign out. Run may be disabled by policy; sign out from the Start menu."
+            }
+        }
+    }
+
+    /// Runs `command` in the remote session through the Run dialog (Win+R, type, Enter).
+    func runCommand(_ command: String) async {
+        guard phase.isActive else { return }
+        engine.focusInput()
+        engine.sendKeyChord([.windows, .r])
+        try? await Task.sleep(for: .milliseconds(900))
+        // One character at a time: Windows drops Unicode key events sent in a burst.
+        for character in command {
+            guard phase.isActive, Task.isCancelled == false else { return }
+            engine.sendText(String(character))
+            try? await Task.sleep(for: .milliseconds(15))
+        }
+        try? await Task.sleep(for: .milliseconds(250))
+        engine.sendKeyChord([.enter])
     }
 
     /// Disconnects and releases everything; the session cannot be used again.
@@ -211,18 +219,16 @@ final class RemoteSession: Identifiable {
         password = ""
     }
 
-    /// Waits for the engine thread to tell the server goodbye, as the app does at quit.
     func waitUntilEnded(timeout: TimeInterval) async {
-        guard let liveSession else { return }
-        _ = await liveSession.waitUntilEnded(timeout: timeout)
+        await engine.waitUntilEnded(timeout: timeout)
     }
 
     // MARK: - Certificate decision
 
     /// Trusts the certificate that was refused, for this host and port, and connects again.
     func trustCertificateAndConnect() {
-        guard let info = refusedCertificate,
-              let key = RDPServerCertificateTrustKey(host: info.host.isEmpty ? address.host : info.host, port: address.port, sha256: info.sha256)
+        guard let issue = refusedCertificate,
+              let key = RDPServerCertificateTrustKey(host: issue.host, port: issue.port, sha256: issue.sha256)
         else { return }
         trustStore.trust(key)
         refusedCertificate = nil
@@ -240,41 +246,28 @@ final class RemoteSession: Identifiable {
     // MARK: - Commands
 
     func focusRemoteInput() {
-        canvas.makeInputFirstResponder()
+        engine.focusInput()
     }
 
     /// Ctrl+Alt+Del on the remote computer (the Secure Attention Sequence goes as scancodes;
-    /// the Mac never sees it).
+    /// the Mac never sees it). Ctrl+Option+End in the session does the same.
     func sendCtrlAltDelete() {
-        sendChord([RDPKeyboardScancode(code: 0x1D, isExtended: false),
-                   RDPKeyboardScancode(code: 0x38, isExtended: false),
-                   RDPKeyboardScancode(code: 0x53, isExtended: true)])
+        engine.sendKeyChord([.control, .alt, .delete])
     }
 
-    /// The Windows key with `scancode` (e.g. R = 0x13, E = 0x12), or alone when nil.
-    func sendWindowsKey(with scancode: UInt16?) {
-        var keys = [RDPKeyboardScancode(code: 0x5B, isExtended: true)]
-        if let scancode {
-            keys.append(RDPKeyboardScancode(code: scancode, isExtended: false))
-        }
-        sendChord(keys)
+    /// The Windows key with `key`, or alone when nil.
+    func sendWindowsKey(with key: RemoteScancode?) {
+        engine.sendKeyChord([.windows] + (key.map { [$0] } ?? []))
     }
 
     func sendAltTab() {
-        sendChord([RDPKeyboardScancode(code: 0x38, isExtended: false), RDPKeyboardScancode(code: 0x0F, isExtended: false)])
-    }
-
-    private func sendChord(_ keys: [RDPKeyboardScancode]) {
-        guard let inputSession else { return }
-        let down = keys.map { RDPSlowPathInputEvent.keyboard(scancode: $0, isReleased: false) }
-        let up = keys.reversed().map { RDPSlowPathInputEvent.keyboard(scancode: $0, isReleased: true) }
-        inputSession.send(down + up)
+        engine.sendKeyChord([.alt, .tab])
     }
 
     func setClipboardEnabled(_ enabled: Bool) {
         clipboardEnabled = enabled
-        clipboard?.setSharingEnabled(enabled)
-        if enabled, clipboard == nil, phase.isActive {
+        engine.setClipboardEnabled(enabled)
+        if enabled, settings.clipboardEnabled == false, phase.isActive {
             lastNotice = "Clipboard sharing starts with the next connection."
         }
     }
@@ -287,252 +280,120 @@ final class RemoteSession: Identifiable {
     }
 
     private func startAttempt() {
-        endLiveSession()
-        let configuration: RDPConnectionConfiguration
-        do {
-            configuration = try makeConfiguration()
-        } catch {
-            phase = .ended(SessionEnd(kind: .failed, category: .client, title: "Invalid settings", message: "\(error)"))
-            return
-        }
+        stopEngine()
         if reconnectCount == 0 {
             phase = .connecting(detail: nil)
         }
-        hasPresentedFrame = false
-        frameMetadata = nil
-        latestFrame = nil
         statistics = nil
         certificateSHA256 = nil
         certificateTrustedBySystem = nil
-        metricsStore.reset(connectionStartedAt: Date())
-        signedInAs = username.isEmpty ? nil : (domain.isEmpty ? username : "\(domain)\\\(username)")
-        if configuration.clipboardEnabled {
-            clipboard = RDPPasteboardClipboard(
-                isSharingEnabled: clipboardEnabled,
-                downloadRoot: FileManager.default.temporaryDirectory.appending(path: "RDP Manager Clipboard"),
-                quarantineAgentName: "RDP Manager"
-            )
-        }
-
-        let session = RDPLiveSession(threadName: "RDP session \(address.host)")
-        liveSession = session
-        run(session, configuration: configuration)
-        startTicking()
-        render()
-    }
-
-    private func makeConfiguration() throws -> RDPConnectionConfiguration {
-        let target = try RDPConnectionTarget(host: address.host, port: address.port)
-        let credentials = username.isEmpty && password.isEmpty
-            ? nil
-            : try RDPCredentials.validated(username: username, domain: domain, password: password)
-        let desktopSize: RDPDesktopSize
-        switch settings.display {
-        case let .fixed(width, height):
-            desktopSize = try RDPDesktopSize(width: UInt16(clamping: width), height: UInt16(clamping: height))
-        case .matchWindow:
-            // Start at the view's size in points at 100%; Display Control switches to full
-            // Retina pixels and the right scale once its channel opens.
-            var surface = canvas.bounds.size
-            if surface.width < 200 || surface.height < 200 {
-                surface = (canvas.window?.screen ?? NSScreen.main)?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
-            }
-            desktopSize = RDPDesktopSize(RDPDisplayRequest(pointSize: surface, backingScaleFactor: 1))
-        }
-        let keyboard = RDPMacKeyboardLayout.current()
-        canvas.keyboard = keyboard
-        var configuration = RDPConnectionConfiguration(
-            target: target,
-            credentials: credentials,
-            timeoutSeconds: settings.timeoutSeconds,
-            // Certificate warnings are never hidden: the trust decision is the user's.
-            hideCertificateWarnings: false,
-            graphicsFrameCaptureLimit: nil,
-            desktopSize: desktopSize,
-            // Not joining the channel at all when the policy says no: Windows empties its
-            // clipboard on join, and nothing can cross.
-            clipboardEnabled: settings.clipboardEnabled,
-            clipboardFetchesRemoteCopies: false,
-            audioPlaybackEnabled: settings.audioPlaybackEnabled,
-            graphicsCapabilityProfile: .automatic,
-            legacyRSAKeyExchange: .fallback,
-            legacyCredSSP: false,
-            clientName: Host.current().localizedName ?? "RDP Manager"
-        )
-        configuration.keyboard = keyboard
-        // macOS may fail the first connect into the local network while it asks for access.
-        configuration.connectAttempts = 3
-        configuration.connectRetryDelay = 1.3
-        return configuration
-    }
-
-    private func run(_ session: RDPLiveSession, configuration: RDPConnectionConfiguration) {
-        let recipient = session.recipient(self)
-        let trustStore = trustStore
-        let port = configuration.port
-        let audioPlayer = audioPlayer
-        session.start(
-            events: RDPLiveSession.Events(
-                onFrameDecoded: { [weak self] presentation, receivedAt, decodedAt, timing in
-                    guard let self else { return }
-                    metricsStore.recordDecodedFrame(presentation.frame, receivedAt: receivedAt, decodedAt: decodedAt, timing: timing)
-                    if framePresenter.present(presentation) == .replaced {
-                        metricsStore.recordSkippedPresentationFrame(at: Date())
-                    }
-                },
-                onFrameDecodeFailed: { [weak self] receivedAt, description in
-                    self?.metricsStore.recordDecodeFailure(receivedAt: receivedAt, errorDescription: description)
-                },
-                onWireReceive: { [weak self] sample in
-                    self?.metricsStore.recordWireReceive(sample)
-                },
-                onServerLayout: { [weak self] layout in
-                    self?.serverMonitorCount = layout.monitors.count
-                    self?.scheduleResize()
-                },
-                onEnd: { report in
-                    recipient.deliver { session in
-                        session.finish(report)
-                    }
-                }
-            )
-        ) { run in
-            RDPSessionClient().run(
-                configuration: configuration,
-                onGraphicsFrame: run.onGraphicsFrame,
-                onInputReady: { input in
-                    recipient.deliver { session in session.activated(input) }
-                },
-                onDisplayControlReady: { control in
-                    recipient.deliver { session in session.displayControlReady(control) }
-                },
-                onClipboardReady: { clipboard in
-                    recipient.deliver { session in session.clipboard?.attach(clipboard) }
-                },
-                onClipboardText: { text, copyNumber in
-                    recipient.deliver { session in session.clipboard?.receiveText(text, copyNumber: copyNumber) }
-                },
-                onClipboardFileGroupDescriptor: { list, copyNumber in
-                    recipient.deliver { session in session.clipboard?.receiveFileList(list, copyNumber: copyNumber) }
-                },
-                onClipboardRemoteCopyUnavailable: { isEmpty, copyNumber in
-                    recipient.deliver { session in
-                        session.clipboard?.receiveRemoteCopyUnavailable(isEmpty: isEmpty, copyNumber: copyNumber)
-                    }
-                },
-                onAudioSample: { sample in
-                    recipient.deliver { session in session.play(sample) }
-                },
-                audioPlaybackDelay: { audioPlayer.playbackDelay },
-                onCertificate: { info in
-                    // Runs during TLS, before any credential is sent: refusing here means the
-                    // server never sees the password.
-                    let refusal = trustStore.trusted.refusal(of: info, port: port, acceptsUntrusted: false)
-                    if refusal != nil {
-                        run.cancellation.cancel()
-                    }
-                    recipient.deliver { session in session.received(info, refusal: refusal) }
-                },
-                onWireReceive: run.onWireReceive,
-                liveReport: run.liveReport,
-                cancellation: run.cancellation
-            )
-        }
-    }
-
-    // MARK: - Engine events (main actor, in order)
-
-    private func received(_ info: RDPServerCertificateInfo, refusal: RDPServerCertificateRefusal?) {
-        certificateSHA256 = info.sha256
-        certificateTrustedBySystem = info.trusted
-        certificateTrustedByUser = trustStore.trusted.isTrusted(host: info.host, port: address.port, sha256: info.sha256)
-        guard let refusal else { return }
-        refusedCertificate = info
-        endLiveSession()
-        phase = .awaitingCertificateDecision(CertificateIssue(
-            kind: refusal == .changed ? .changed : .untrusted,
-            host: info.host.isEmpty ? address.host : info.host,
-            port: address.port,
-            sha256: info.sha256,
-            systemTrustDetail: info.warnings.map(\.message).joined(separator: "\n").nilIfEmpty
+        certificateTrustedByUser = false
+        isUnverifiedServer = false
+        tlsProtocol = nil
+        desktopPixelSize = nil
+        isSigningOut = false
+        let identity = Self.splitDomain(username: username, domain: domain)
+        signedInAs = identity.username.isEmpty ? nil : (identity.domain.isEmpty ? identity.username : "\(identity.domain)\\\(identity.username)")
+        isRunning = true
+        engine.start(EngineConnectRequest(
+            address: address,
+            username: identity.username,
+            domain: identity.domain,
+            password: password,
+            settings: settings,
+            clipboardEnabled: clipboardEnabled
         ))
     }
 
-    private func activated(_ input: RDPInputSession) {
-        inputSession = input
-        if displayControl?.isEnded == true {
-            displayControl = nil
-        }
+    /// `DOMAIN\user` typed into the user name, with no domain, is split as Windows clients do;
+    /// `user@domain` (UPN) stays whole.
+    nonisolated static func splitDomain(username: String, domain: String) -> (username: String, domain: String) {
+        guard domain.isEmpty, let separator = username.firstIndex(of: "\\") else { return (username, domain) }
+        return (String(username[username.index(after: separator)...]), String(username[..<separator]))
+    }
+
+    private func stopEngine() {
+        signOutTask?.cancel()
+        signOutTask = nil
+        isRunning = false
+        engine.stop()
+        connectedAt = nil
+    }
+
+    private func cancelPendingWork() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        credentialTask?.cancel()
+        credentialTask = nil
+    }
+}
+
+// MARK: - Engine events
+
+extension RemoteSession: SessionEngineDelegate {
+    func engine(receivedCertificateSHA256 sha256: String?, trustedBySystem: Bool?, trustedByUser: Bool) {
+        certificateSHA256 = sha256
+        certificateTrustedBySystem = trustedBySystem
+        certificateTrustedByUser = trustedByUser
+        isUnverifiedServer = sha256 == nil && trustedBySystem == nil
+    }
+
+    func engine(refusedCertificate issue: CertificateIssue) {
+        refusedCertificate = issue
+        stopEngine()
+        phase = .awaitingCertificateDecision(issue)
+    }
+
+    func engineActivated(credentialsVerified: Bool) {
         // Over NLA the server checked the password before activating: only then is it worth
         // saving.
-        if let account = saveVerifiedPasswordTo, input.connectionContext.credentialsVerifiedBeforeActivation {
-            saveVerifiedPasswordTo = nil
-            let password = password
-            Task { [weak self, credentials] in
-                do {
-                    try await credentials.setPassword(password, for: account)
-                    if let self {
-                        onVerifiedCredentials?(self, username, domain)
-                    }
-                } catch {
-                    self?.lastNotice = "The password could not be saved: \(error.localizedDescription)"
+        guard let account = saveVerifiedPasswordTo, credentialsVerified else { return }
+        saveVerifiedPasswordTo = nil
+        let password = password
+        Task { [weak self, credentials] in
+            do {
+                try await credentials.setPassword(password, for: account)
+                if let self {
+                    onVerifiedCredentials?(self, username, domain)
                 }
+            } catch {
+                self?.lastNotice = "The password could not be saved: \(error.localizedDescription)"
             }
         }
-        render()
     }
 
-    private func displayControlReady(_ control: RDPDisplayControlSession) {
-        displayControl = control
-        lastSentDisplayRequest = nil
-        serverMonitorCount = control.serverMonitors.count
-        scheduleResize()
-    }
-
-    private func noteShown(_ presentation: RDPDecodedFramePresentation) {
-        let frame = presentation.frame
-        latestFrame = frame
-        let sizeChanged = frameMetadata?.width != frame.width || frameMetadata?.height != frame.height
-        if sizeChanged {
-            frameMetadata = RDPFrameMetadata(frame)
-            desktopPixelSize = CGSize(width: Int(frame.width), height: Int(frame.height))
+    func engine(showedDesktopOfSize size: CGSize, firstFrame: Bool) {
+        desktopPixelSize = size
+        guard firstFrame else { return }
+        reconnectCount = 0
+        connectedAt = Date()
+        phase = .connected
+        if isUnverifiedServer {
+            lastNotice = "Standard RDP Security: the server's identity is not verified and the encryption is weak."
         }
-        if hasPresentedFrame == false {
-            hasPresentedFrame = true
-            reconnectCount = 0
-            connectedAt = Date()
-            phase = .connected
-            onDesktopShown?(self)
-            render()
-            canvas.makeInputFirstResponder()
-        } else if sizeChanged {
-            render()
+        onDesktopShown?(self)
+    }
+
+    func engine(updatedStatistics statistics: SessionStatistics?, tlsProtocol: String?, connectAttempt: Int?) {
+        self.statistics = statistics
+        if let tlsProtocol {
+            self.tlsProtocol = tlsProtocol
+        }
+        if case .connecting = phase, let connectAttempt, connectAttempt > 1 {
+            phase = .connecting(detail: "Trying again (\(connectAttempt)/3)…")
         }
     }
 
-    private func play(_ sample: RDPAudioSample) {
-        guard settings.audioPlaybackEnabled else { return }
-        _ = try? audioPlayer.enqueue(sample)
-    }
-
-    private func finish(_ report: RDPConnectionReport) {
-        framePresenter.flush()
-        let wasShowingDesktop = hasPresentedFrame
-        tlsProtocol = report.tlsProtocol ?? tlsProtocol
-        detachChannels()
-        liveSession = nil
-        stopTicking()
-        // A refused certificate already decided the phase; its cancellation is not an end.
-        if case .awaitingCertificateDecision = phase {
-            render()
-            return
-        }
-        switch SessionEndMapping.outcome(for: report, host: address.host, showedDesktop: wasShowingDesktop) {
+    func engine(ended end: EngineEnd, showedDesktop: Bool) {
+        isRunning = false
+        connectedAt = nil
+        signOutTask?.cancel()
+        isSigningOut = false
+        switch end {
         case let .promptForCredentials(message):
             password = ""
             didAskForCredentials = false
-            let account = CredentialPlan.plan(for: settings.credential, connectionID: connectionID, profiles: profiles)
-            let saveTo: SecretAccount? = switch account {
+            let saveTo: SecretAccount? = switch CredentialPlan.plan(for: settings.credential, connectionID: connectionID, profiles: profiles) {
             case let .keychain(_, _, account): account
             case let .prompt(_, _, account): account
             }
@@ -544,7 +405,7 @@ final class RemoteSession: Identifiable {
             }
             switch reconnectPolicy.decision(
                 after: end,
-                wasShowingDesktop: wasShowingDesktop || reconnectCount > 0,
+                wasShowingDesktop: showedDesktop || reconnectCount > 0,
                 attemptsMade: reconnectCount,
                 enabled: settings.autoReconnect
             ) {
@@ -560,108 +421,5 @@ final class RemoteSession: Identifiable {
                 phase = .ended(end)
             }
         }
-        render()
     }
-
-    // MARK: - Display
-
-    private func scheduleResize() {
-        resizeTask?.cancel()
-        guard case .matchWindow = settings.display,
-              let viewerSurface, displayControl != nil,
-              serverMonitorCount < 2 // A multi-monitor layout is the server's; leave it.
-        else { return }
-        let request = RDPDisplayRequest(pointSize: viewerSurface.size, backingScaleFactor: viewerSurface.scale)
-        guard request != lastSentDisplayRequest else { return }
-        resizeTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(350))
-            guard Task.isCancelled == false, let self, let control = displayControl else { return }
-            if control.send(request) {
-                lastSentDisplayRequest = request
-            }
-        }
-    }
-
-    // MARK: - Housekeeping
-
-    private func render() {
-        canvas.update(frame: frameMetadata, showsDesktop: hasPresentedFrame && phase.isActive, inputSession: inputSession)
-        framePresenter.isPacing = liveSession != nil
-    }
-
-    private func startTicking() {
-        tickTask?.cancel()
-        tickTask = Task { [weak self] in
-            while Task.isCancelled == false {
-                try? await Task.sleep(for: .seconds(1))
-                guard let self, Task.isCancelled == false else { return }
-                clipboard?.poll()
-                refreshStatistics()
-            }
-        }
-    }
-
-    private func stopTicking() {
-        tickTask?.cancel()
-        tickTask = nil
-    }
-
-    private func refreshStatistics() {
-        if let snapshot = liveSession?.liveReport.snapshot {
-            // Known once the handshake is done; the final report only comes when the session ends.
-            if let tls = snapshot.tlsProtocol {
-                tlsProtocol = tls
-            }
-            if hasPresentedFrame == false {
-                connectionStage = snapshot.stage
-                if case .connecting = phase, let attempt = snapshot.connectAttempt, attempt > 1 {
-                    phase = .connecting(detail: "Trying again (\(attempt)/3)…")
-                }
-            }
-        }
-        let metrics = metricsStore.metrics
-        let now = Date()
-        statistics = SessionStatistics(
-            framesPerSecond: metrics.rollingFramesPerSecond(at: now),
-            wireMegabitsPerSecond: metrics.rollingWireMegabitsPerSecond(at: now),
-            averageDecodeMilliseconds: metrics.averageDecodeMilliseconds,
-            hardwareDecoding: metrics.usesHardwareAcceleration,
-            codec: latestFrame.map { RDPFrameMetadata($0).codecName },
-            decodedFrames: metrics.decodedFrameCount,
-            failedDecodes: metrics.failedDecodeCount,
-            firstFrameMilliseconds: metrics.firstFrameLatencyMilliseconds
-        )
-    }
-
-    private func cancelPendingWork() {
-        reconnectTask?.cancel()
-        reconnectTask = nil
-        credentialTask?.cancel()
-        credentialTask = nil
-    }
-
-    private func endLiveSession() {
-        liveSession?.cancel()
-        liveSession = nil
-        detachChannels()
-        stopTicking()
-        framePresenter.clear()
-        hasPresentedFrame = false
-        render()
-    }
-
-    private func detachChannels() {
-        resizeTask?.cancel()
-        inputSession = nil
-        displayControl = nil
-        lastSentDisplayRequest = nil
-        clipboard?.detach()
-        clipboard = nil
-        audioPlayer.reset()
-        connectedAt = nil
-    }
-}
-
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

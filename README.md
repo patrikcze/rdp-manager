@@ -4,7 +4,12 @@
 
 A native macOS Remote Desktop manager for administrators who look after many Windows servers. You can organize hosts in nested groups, find any of them instantly, and work in several RDP sessions side by side in tabs or separate windows.
 
-Built with Swift 6, SwiftUI and AppKit on [RDPKit](https://github.com/steelbrain/RDPKit), a pure-Swift RDP engine with hardware H.264 decoding.
+Built with Swift 6, SwiftUI and AppKit on two RDP engines:
+
+- [RDPKit](https://github.com/steelbrain/RDPKit), pure Swift with hardware H.264, for everyday connections.
+- [FreeRDP 3](https://github.com/FreeRDP/FreeRDP), bundled, for Kerberos, Standard RDP Security and device redirection.
+
+The app picks the engine per connection.
 
 ![Connection library with nested groups and the Overview table](docs/screenshots/overview.png)
 
@@ -27,19 +32,29 @@ Built with Swift 6, SwiftUI and AppKit on [RDPKit](https://github.com/steelbrain
 - **Quick Connect (⌘K):** `host`, `host:port` or an IP address. You can save the connection afterwards.
 - **Tabbed sessions:** many concurrent sessions, with state shown in the tabs. Tabs can be reordered, moved to their own window, and shown in focus mode or full screen.
 - **Remote desktop:** the resolution follows the window at Retina scale, with H.264/AVC444 decoded by VideoToolbox. Your Mac keyboard layout is announced to Windows, ⌘ acts as the Windows key, and Ctrl+Alt+Del and other keys can be sent from a menu. Clipboard text and files work in both directions, and remote audio can play on the Mac.
-- **Security:** passwords stay in the Keychain. Certificates are checked before any credential is sent, and changed certificates are flagged. NLA is always on, and there is no telemetry.
+- **Enterprise:**
+  - Kerberos (with NTLM fallback or Kerberos only, plus an optional KDC proxy).
+  - Opt-in Standard RDP Security for legacy servers.
+  - Printer redirection (every Mac printer).
+  - Smart card and YubiKey redirection (PC/SC).
+  - Microphone and USB device redirection, and a shared folder.
+- **Sign out or disconnect:** Disconnect leaves the Windows session running. Sign Out of Windows… ends it. Ctrl+Option+End sends Ctrl+Alt+Del.
+- **Self-contained app:** every library is bundled. `Scripts/make-dmg.sh` builds a distributable DMG, signed and notarized with a Developer ID.
+- **Security:** passwords stay in the Keychain. Certificates are checked before any credential is sent, and changed certificates are flagged. NLA is the default (Standard RDP Security only when you choose it), and there is no telemetry.
 - **Reliability:** bounded automatic reconnect after network drops, never after sign-in or certificate failures. Errors are clear and explain what to do next.
 - **Import and export:** Microsoft `.rdp` files (unsupported settings are reported), plus JSON library export and import without passwords.
 
 ## Quick start
 ```bash
+brew install cmake ninja pkgconf openssl@3 krb5 libusb cjson
+Scripts/build-freerdp.sh
 Scripts/build-app.sh
 open "build/RDP Manager.app"
 ```
 Or open `Package.swift` in Xcode and run the `RDPManager` scheme. See [BUILDING.md](BUILDING.md).
 
 ## Status
-Version 0.1.0. The app builds, launches and passes 32 automated tests, including real engine runs. **Sign-in to a live Windows host has not yet been verified**; see [TESTING.md](TESTING.md) and [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md). RD Gateway and Kerberos are not supported by the current engine.
+Version 0.2.0. Verified against Windows 11 on both engines: NLA sign-in, rendering, printer redirection and the shared certificate trust. 49 automated tests pass, plus live sign-in tests. Kerberos, YubiKey/USB and microphone redirection aren't verified live yet, and serial ports are unsupported on macOS. See [TESTING.md](TESTING.md) and [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md).
 
 ## Documentation
 [Architecture](ARCHITECTURE.md) · [Design](DESIGN.md) · [Backend decision](RDP-BACKEND-DECISION.md) · [Security](SECURITY.md) · [Testing](TESTING.md) · [Building](BUILDING.md) · [Limitations](KNOWN-LIMITATIONS.md) · [Plan](IMPLEMENTATION-PLAN.md) · [Changelog](CHANGELOG.md) · [Third-party notices](THIRD-PARTY-NOTICES.md)

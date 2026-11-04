@@ -124,6 +124,18 @@ struct AppCommands: Commands {
     }
 }
 
+/// Signing out closes the user's programs on the server; it is never done without asking.
+@MainActor
+func confirmSignOut(_ session: RemoteSession) -> Bool {
+    let alert = NSAlert()
+    alert.messageText = "Sign out of \(session.title)?"
+    alert.informativeText = "Windows closes every program in this session; unsaved work is lost. Use Disconnect to leave the session running instead."
+    alert.addButton(withTitle: "Sign Out")
+    alert.addButton(withTitle: "Cancel")
+    alert.buttons.first?.hasDestructiveAction = true
+    return alert.runModal() == .alertFirstButtonReturn
+}
+
 /// The Session menu, shared by the menu bar and the session toolbar's menu.
 struct SessionMenuItems: View {
     let model: AppModel
@@ -137,6 +149,10 @@ struct SessionMenuItems: View {
         Button("Disconnect") { session?.disconnect() }
             .keyboardShortcut("d", modifiers: [.command, .option])
             .disabled(session.map { $0.phase.isActive || $0.phase.isInProgress } != true)
+        Button("Sign Out of Windows…") {
+            if let session, confirmSignOut(session) { session.signOut() }
+        }
+        .disabled(session?.phase.isActive != true || session?.isSigningOut == true)
         Button("Close Session") {
             if let session { model.workspace.close(session) }
         }
@@ -146,9 +162,9 @@ struct SessionMenuItems: View {
         Menu("Send Keys") {
             Button("Ctrl+Alt+Del") { session?.sendCtrlAltDelete() }
             Button("Windows") { session?.sendWindowsKey(with: nil) }
-            Button("Win+R (Run)") { session?.sendWindowsKey(with: 0x13) }
-            Button("Win+E (Explorer)") { session?.sendWindowsKey(with: 0x12) }
-            Button("Win+L (Lock)") { session?.sendWindowsKey(with: 0x26) }
+            Button("Win+R (Run)") { session?.sendWindowsKey(with: .r) }
+            Button("Win+E (Explorer)") { session?.sendWindowsKey(with: .e) }
+            Button("Win+L (Lock)") { session?.sendWindowsKey(with: .l) }
             Button("Alt+Tab") { session?.sendAltTab() }
         }
         .disabled(session?.phase.isActive != true)

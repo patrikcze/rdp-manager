@@ -14,6 +14,10 @@ final class RemoteDesktopCanvas: NSView {
     /// The canvas's size in points and its backing scale, whenever either changes: the
     /// session resizes the remote desktop to follow it.
     var onSurfaceChange: ((_ pointSize: CGSize, _ backingScaleFactor: CGFloat) -> Void)?
+    /// Ctrl+Option+End while the desktop has the keyboard: the remote Ctrl+Alt+Del, as in
+    /// Microsoft's client (on a Mac keyboard, End is Fn+→).
+    var onCtrlAltEnd: (() -> Void)?
+    private var keyMonitor: Any?
 
     var keyboard: RDPKeyboard {
         get { inputView.keyboard }
@@ -61,6 +65,32 @@ final class RemoteDesktopCanvas: NSView {
         super.viewDidMoveToWindow()
         lastReportedSurface = nil
         reportSurfaceIfNeeded()
+        installKeyMonitorIfNeeded()
+    }
+
+    /// The input view is RDPKit's and cannot be subclassed, so the shortcut is caught before it.
+    private func installKeyMonitorIfNeeded() {
+        if window == nil, let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        }
+        guard keyMonitor == nil, window != nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, hasInputFocus, Self.isCtrlAltEnd(event) else { return event }
+            onCtrlAltEnd?()
+            return nil
+        }
+    }
+
+    static func isCtrlAltEnd(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection([.control, .option, .command, .shift])
+        return event.keyCode == 119 && flags == [.control, .option] // kVK_End
+    }
+
+    /// The size the first connection asks for, before Display Control follows the view.
+    var initialPointSize: CGSize {
+        if bounds.width >= 200, bounds.height >= 200 { return bounds.size }
+        return (window?.screen ?? NSScreen.main)?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
     }
 
     func update(frame: RDPFrameMetadata?, showsDesktop: Bool, inputSession: RDPInputSession?) {

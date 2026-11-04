@@ -43,6 +43,7 @@ private struct SessionInspector: View {
                     }
                 }
                 LabeledContent("Reconnects", value: "\(session.reconnectCount)")
+                LabeledContent("Engine", value: session.engineKind.label)
             } header: {
                 Text(session.title)
             }
@@ -70,6 +71,14 @@ private struct SessionInspector: View {
             }
 
             Section("Security") {
+                if session.isUnverifiedServer {
+                    Label("Standard RDP Security: server not verified", systemImage: "exclamationmark.shield")
+                        .foregroundStyle(.orange)
+                }
+                LabeledContent("Security layer", value: session.settings.security.label)
+                if session.settings.authentication != .ntlm {
+                    LabeledContent("Authentication", value: session.settings.authentication.label)
+                }
                 LabeledContent("TLS", value: session.tlsProtocol ?? "—")
                 LabeledContent("Certificate") {
                     Text(certificateLabel)
@@ -85,6 +94,17 @@ private struct SessionInspector: View {
             Section("Redirection") {
                 Toggle("Clipboard", isOn: Binding(get: { session.clipboardEnabled }, set: { session.setClipboardEnabled($0) }))
                 LabeledContent("Audio playback", value: session.settings.audioPlaybackEnabled ? "On" : "Off")
+                if session.engineKind == .freeRDP {
+                    LabeledContent("Microphone", value: session.settings.microphoneEnabled ? "On" : "Off")
+                    LabeledContent("Printers", value: session.settings.printersEnabled ? "All Mac printers" : "Off")
+                    LabeledContent("Smart cards", value: session.settings.smartCardsEnabled ? "All readers" : "Off")
+                    if session.settings.usbDevices.isEmpty == false {
+                        LabeledContent("USB", value: session.settings.usbDevices.joined(separator: ", "))
+                    }
+                }
+                if let folder = session.settings.sharedFolderPath {
+                    LabeledContent("Shared folder", value: (folder as NSString).lastPathComponent)
+                }
                 LabeledContent("⌘ shortcuts", value: session.settings.sendsCommandShortcutsToRemote ? "To remote" : "To Mac")
             }
 
@@ -96,6 +116,10 @@ private struct SessionInspector: View {
                 }
                 if session.phase.isActive {
                     Button("Send Ctrl+Alt+Del") { session.sendCtrlAltDelete() }
+                    Button("Sign Out of Windows…", role: .destructive) {
+                        if confirmSignOut(session) { session.signOut() }
+                    }
+                    .disabled(session.isSigningOut)
                 }
             }
         }
