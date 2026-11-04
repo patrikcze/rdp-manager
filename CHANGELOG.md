@@ -8,6 +8,7 @@
   - text clipboard, remote cursor shapes and dynamic resolution
 - Shared folder redirection on both engines.
 - Sign Out of Windows (through Run → `logoff`, with confirmation) alongside Disconnect.
+- Session commands in the right-click menus of the sidebar, the Overview table and the session tabs: Show Session, Reconnect, Disconnect, Send Ctrl+Alt+Del, Sign Out of Windows… and Close Session, with a submenu per session when a connection has several.
 - Ctrl+Option+End sends Ctrl+Alt+Del on both engines.
 - Settings editor sections for Security, Devices and Engine, with inheritance and an engine summary. The inspector shows the engine, the security layer and redirected devices.
 - Self-contained app bundle: FreeRDP, OpenSSL, Kerberos, libusb and cJSON bundled and relinked; license texts included. `Scripts/make-dmg.sh` builds a DMG, signed and notarized with a Developer ID.

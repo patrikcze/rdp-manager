@@ -161,6 +161,8 @@ struct OverviewView: View {
                     for id in ids { model.connect(id) }
                 }
                 if ids.count == 1, let id = ids.first {
+                    ConnectionSessionsMenuItems(connectionID: id)
+                    Divider()
                     Button("Edit…") { model.edit(id) }
                     Button("Duplicate") { model.inventory.duplicate(id) }
                     Button(model.inventory.connection(id)?.isFavorite == true ? "Remove from Favorites" : "Add to Favorites") {
