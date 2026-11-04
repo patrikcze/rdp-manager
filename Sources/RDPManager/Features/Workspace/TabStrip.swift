@@ -41,15 +41,12 @@ struct TabStrip: View {
                         return true
                     }
                     .contextMenu {
-                        Button("Reconnect") { session.connect() }
-                        Button("Disconnect") { session.disconnect() }
+                        SessionControlMenuItems(session: session, showsShowSession: false)
                         Divider()
                         Button("Move to New Window") {
                             workspace.markDetached(session.id)
                             openWindow(id: "session", value: session.id)
                         }
-                        Divider()
-                        Button("Close Tab") { workspace.close(session) }
                     }
                 }
             }

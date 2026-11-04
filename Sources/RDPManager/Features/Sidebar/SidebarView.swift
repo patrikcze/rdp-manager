@@ -190,6 +190,7 @@ struct SidebarView: View {
             if let connection = inventory.connection(id) {
                 Button("Connect") { model.connect(id) }
                 Button("Connect in New Session") { model.workspace.open(id, newSession: true) }
+                ConnectionSessionsMenuItems(connectionID: id)
                 Divider()
                 Button("Edit…") { model.edit(id) }
                 Button("Rename") { startRename(.connection(id), connection.name) }
