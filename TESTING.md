@@ -16,6 +16,7 @@ Live tests read credentials only from the environment. Never put them in files.
 | `RDPManagerCoreTests/InventoryStoreTests` | Nested groups, reordering, move-cycle prevention, deleting groups with or without contents, settings inheritance and its sources, credential references, orphaned Keychain accounts, search, persistence (0600 permissions), newer schema refused |
 | `RDPManagerCoreTests/ImportExportTests` | `.rdp` import and warnings, library export without passwords, identifier remapping, risky settings removed on library import |
 | `RDPManagerCoreTests/UnreadableLibraryTests` | A damaged `inventory.json` is never overwritten; a missing one starts empty and saves |
+| `RDPManagerCoreTests/RDPFileExportTests` | `.rdp` export: effective settings, `DOMAIN\user` from profiles, no password or Mac paths, no line injection, safe file names, round trip through the importer |
 | `RDPManagerCoreTests/SessionPolicyTests` | Bounded reconnect, no retry for authentication/certificate/server failures, credential plans |
 | `RDPManagerCoreTests/EngineChoiceTests` | Which engine each feature selects, forced engines and ignored settings, USB ID normalization, old libraries still decode |
 | `RDPEngineIntegrationTests/EngineFailureTests` | Real RDPKit runs against local sockets: refused port, non-RDP service, silent server, wrong password |
@@ -24,7 +25,7 @@ Live tests read credentials only from the environment. Never put them in files.
 | `RDPEngineIntegrationTests/CertificatePinTests` | A pinned certificate's replacement is refused as changed even when macOS trusts it; other hosts follow system trust; trust file is 0600/0700 |
 | `RDPEngineIntegrationTests/LiveFreeRDPTests` | Opt-in: real FreeRDP bridge sign-in (Auto, NLA), pixels arrive, certificate callback runs, wrong password fails authentication |
 
-Last run (2026-11-05, macOS 27.2, Xcode 27.2, Swift 6.4.2, Apple Silicon): **63 automated tests passed**. The 3 live tests passed against a Windows 11 VM on 2026-11-04 and were not rerun after the security fixes.
+Last run (2026-11-05, macOS 27.2, Xcode 27.2, Swift 6.4.2, Apple Silicon): **68 automated tests passed**. The 3 live tests passed against a Windows 11 VM on 2026-11-04 and were not rerun after the security fixes.
 
 ## Functional test matrix
 
