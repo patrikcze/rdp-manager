@@ -7,8 +7,7 @@ import SwiftUI
 struct CredentialsView: View {
     @Environment(AppModel.self) private var model
     @State private var selection: UUID?
-    @State private var editing: CredentialProfile?
-    @State private var isNew = false
+    @State private var editing: CredentialEditorRequest?
     @State private var savedPasswords: Set<UUID> = []
 
     var body: some View {
@@ -25,8 +24,7 @@ struct CredentialsView: View {
                 }
                 Spacer()
                 Button {
-                    isNew = true
-                    editing = CredentialProfile(name: "", username: "")
+                    editing = CredentialEditorRequest(profile: CredentialProfile(name: "", username: ""), isNew: true)
                 } label: {
                     Label("New Credential", systemImage: "plus")
                 }
@@ -55,16 +53,14 @@ struct CredentialsView: View {
             .contextMenu(forSelectionType: UUID.self) { ids in
                 if let id = ids.first, let profile = model.inventory.credential(id) {
                     Button("Edit…") {
-                        isNew = false
-                        editing = profile
+                        editing = CredentialEditorRequest(profile: profile, isNew: false)
                     }
                     Divider()
                     Button("Delete", role: .destructive) { delete(id) }
                 }
             } primaryAction: { ids in
                 if let id = ids.first, let profile = model.inventory.credential(id) {
-                    isNew = false
-                    editing = profile
+                    editing = CredentialEditorRequest(profile: profile, isNew: false)
                 }
             }
             .overlay {
@@ -77,8 +73,11 @@ struct CredentialsView: View {
                 }
             }
         }
-        .sheet(item: $editing) { profile in
-            CredentialEditor(profile: profile, isNew: isNew) { refresh() }
+        // Whether the profile is new travels with the request: a separate @State read only in
+        // this closure reached the sheet stale, so a new credential opened as "Save" and was
+        // never added.
+        .sheet(item: $editing) { request in
+            CredentialEditor(profile: request.profile, isNew: request.isNew) { refresh() }
         }
         .task(id: model.inventory.credentials.map(\.id)) { refresh() }
     }
@@ -99,6 +98,12 @@ struct CredentialsView: View {
         model.inventory.deleteCredential(id)
         Task { try? await model.credentials.deletePassword(for: .credential(id)) }
     }
+}
+
+private struct CredentialEditorRequest: Identifiable {
+    var profile: CredentialProfile
+    var isNew: Bool
+    var id: UUID { profile.id }
 }
 
 private struct CredentialEditor: View {
@@ -150,11 +155,7 @@ private struct CredentialEditor: View {
     }
 
     private func save() {
-        if isNew {
-            model.inventory.addCredential(profile)
-        } else {
-            model.inventory.update(profile)
-        }
+        model.inventory.saveCredential(profile)
         let password = password
         let account = SecretAccount.credential(profile.id)
         Task {

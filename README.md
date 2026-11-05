@@ -56,7 +56,7 @@ open "build/RDP Manager.app"
 Or open `Package.swift` in Xcode and run the `RDPManager` scheme. See [BUILDING.md](BUILDING.md).
 
 ## Status
-Version 0.3.0. Verified against Windows 11 on both engines: NLA sign-in, rendering, printer redirection and the shared certificate trust. 68 automated tests pass in CI; live sign-in tests passed before the 0.3.0 security fixes and haven't been rerun since. Kerberos, YubiKey/USB and microphone redirection aren't verified live yet, and serial ports are unsupported on macOS. See [TESTING.md](TESTING.md) and [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md).
+Version 0.3.0. Verified against Windows 11 on both engines: NLA sign-in, rendering, printer redirection and the shared certificate trust. 69 automated tests pass in CI; live sign-in tests passed before the 0.3.0 security fixes and haven't been rerun since. Kerberos, YubiKey/USB and microphone redirection aren't verified live yet, and serial ports are unsupported on macOS. See [TESTING.md](TESTING.md) and [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md).
 
 ## Documentation
 [Architecture](ARCHITECTURE.md) · [Design](DESIGN.md) · [Backend decision](RDP-BACKEND-DECISION.md) · [Security](SECURITY.md) · [Testing](TESTING.md) · [Building](BUILDING.md) · [Limitations](KNOWN-LIMITATIONS.md) · [Plan](IMPLEMENTATION-PLAN.md) · [Changelog](CHANGELOG.md) · [Third-party notices](THIRD-PARTY-NOTICES.md)

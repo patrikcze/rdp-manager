@@ -377,6 +377,19 @@ public final class InventoryStore {
         }
     }
 
+    /// Replaces the profile with the same identifier, or adds it when the library doesn't have
+    /// one yet. The credential editor saves through this, so a save never drops a profile
+    /// whatever the editor believed about it being new.
+    public func saveCredential(_ profile: CredentialProfile) {
+        mutate { inventory in
+            if let index = inventory.credentials.firstIndex(where: { $0.id == profile.id }) {
+                inventory.credentials[index] = profile
+            } else {
+                inventory.credentials.append(profile)
+            }
+        }
+    }
+
     /// Removes the profile and every reference to it: those folders and connections fall back
     /// to what they inherit. The caller deletes the Keychain item.
     public func deleteCredential(_ id: UUID) {

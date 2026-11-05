@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.1 (unreleased)
+- Fix: a new shared credential was never added. The editor opened as if editing an existing one, so Save changed nothing while the password still went to the Keychain under an unused entry (Settings › Remove Unused Passwords clears it).
+
 ## 0.3.0 (2026-11-05)
 First published release. It includes everything planned for 0.2.0, which was never released on its own.
 
