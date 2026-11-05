@@ -193,7 +193,7 @@ struct SidebarView: View {
                 }
                 Button("Export as .rdp File…") { model.exportRDPFile(id) }
                 Divider()
-                Button("Delete", role: .destructive) { model.requestDelete(.connection(id)) }
+                Button("Delete…", role: .destructive) { model.requestDelete(.connection(id)) }
             }
         case let .folder(id):
             if let folder = inventory.folder(id) {

@@ -172,8 +172,8 @@ struct OverviewView: View {
                     Button("Export as .rdp File…") { model.exportRDPFile(id) }
                 }
                 Divider()
-                Button("Delete", role: .destructive) {
-                    model.delete(Set(ids.map(TreeItem.connection)))
+                Button("Delete…", role: .destructive) {
+                    model.requestDeleteConnections(Array(ids))
                 }
             }
         } primaryAction: { ids in

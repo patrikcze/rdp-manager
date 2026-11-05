@@ -2,6 +2,7 @@
 
 ## 0.3.1 (unreleased)
 - Search results show in the main table instead of replacing the sidebar. Swapping the sidebar left stale rows drawn over it, or an empty Connections section, after the search was cleared.
+- Fix: the Delete key deleted the selected connection, and its saved password, without asking. Deleting connections now always asks first, from the keyboard and both context menus.
 
 ## 0.3.0 (2026-11-05)
 First published release. It includes everything planned for 0.2.0, which was never released on its own.

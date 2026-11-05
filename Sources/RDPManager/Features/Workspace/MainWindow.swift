@@ -54,6 +54,17 @@ struct MainWindow: View {
         } message: { _ in
             Text("Keeping contents moves its connections and subgroups up one level. Saved passwords of deleted connections are removed from the Keychain.")
         }
+        .confirmationDialog(
+            connectionDeletionTitle,
+            isPresented: Binding(get: { model.pendingConnectionDeletion.isEmpty == false }, set: { if !$0 { model.pendingConnectionDeletion = [] } })
+        ) {
+            Button("Delete", role: .destructive) {
+                model.delete(Set(model.pendingConnectionDeletion.map(TreeItem.connection)))
+                model.pendingConnectionDeletion = []
+            }
+        } message: {
+            Text("Their saved passwords are removed from the Keychain. This can't be undone.")
+        }
         .alert(item: $model.alert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message))
         }
@@ -146,6 +157,14 @@ struct MainWindow: View {
         }
     }
     #endif
+
+    private var connectionDeletionTitle: String {
+        let ids = model.pendingConnectionDeletion
+        if ids.count == 1, let connection = model.inventory.connection(ids[0]) {
+            return "Delete “\(connection.name)”?"
+        }
+        return "Delete \(ids.count) connections?"
+    }
 
     /// What the sidebar selects is shown: a host with an open session shows that session;
     /// anything else (a group, a smart list, Credentials, a host without a session) shows
