@@ -12,28 +12,27 @@ struct SidebarView: View {
 
     var body: some View {
         @Bindable var model = model
+        // The list keeps one structure: search results show in the main pane's table. Swapping
+        // every section for results here left stale rows in the sidebar's outline view, both
+        // when patched in place and when rebuilt.
         List(selection: $model.sidebarSelection) {
-            if model.searchText.isEmpty == false {
-                searchResults
-            } else {
-                Section("Library") {
-                    smartRow(.allConnections, "All Connections", "square.stack.3d.up", count: inventory.connections.count)
-                    smartRow(.favorites, "Favorites", "star", count: inventory.favorites.count)
-                    smartRow(.recent, "Recent", "clock", count: inventory.recent().count)
-                }
-                Section {
-                    tree(parentID: nil)
-                } header: {
-                    Text("Connections")
-                        .dropDestination(for: String.self) { items, _ in
-                            drop(items, into: nil, at: nil)
-                        }
-                }
-                Section("Security") {
-                    Label("Credentials", systemImage: "key")
-                        .badge(inventory.credentials.count)
-                        .tag(SidebarSelection.credentials)
-                }
+            Section("Library") {
+                smartRow(.allConnections, "All Connections", "square.stack.3d.up", count: inventory.connections.count)
+                smartRow(.favorites, "Favorites", "star", count: inventory.favorites.count)
+                smartRow(.recent, "Recent", "clock", count: inventory.recent().count)
+            }
+            Section {
+                tree(parentID: nil)
+            } header: {
+                Text("Connections")
+                    .dropDestination(for: String.self) { items, _ in
+                        drop(items, into: nil, at: nil)
+                    }
+            }
+            Section("Security") {
+                Label("Credentials", systemImage: "key")
+                    .badge(inventory.credentials.count)
+                    .tag(SidebarSelection.credentials)
             }
         }
         .listStyle(.sidebar)
@@ -163,24 +162,6 @@ struct SidebarView: View {
             .onExitCommand { renaming = nil }
     }
 
-    @ViewBuilder
-    private var searchResults: some View {
-        let results = inventory.search(model.searchText)
-        Section("\(results.count) Result\(results.count == 1 ? "" : "s")") {
-            ForEach(results) { connection in
-                VStack(alignment: .leading, spacing: 1) {
-                    connectionRow(connection)
-                    Text(([connection.addressLabel] + inventory.path(of: connection.folderID).map(\.name)).joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .padding(.leading, 20)
-                }
-                .tag(SidebarSelection.connection(connection.id))
-            }
-        }
-    }
-
     // MARK: - Menus
 
     @ViewBuilder
@@ -212,7 +193,7 @@ struct SidebarView: View {
                 }
                 Button("Export as .rdp File…") { model.exportRDPFile(id) }
                 Divider()
-                Button("Delete", role: .destructive) { model.requestDelete(.connection(id)) }
+                Button("Delete…", role: .destructive) { model.requestDelete(.connection(id)) }
             }
         case let .folder(id):
             if let folder = inventory.folder(id) {

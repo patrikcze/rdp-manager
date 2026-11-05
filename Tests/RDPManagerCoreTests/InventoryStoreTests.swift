@@ -87,6 +87,20 @@ struct InventoryStoreTests {
         #expect(store.source(of: .credential, for: host) == .connection)
     }
 
+    @Test func savingCredentialAddsOrReplaces() {
+        let (store, persistence) = makeStore()
+        var profile = CredentialProfile(name: "EMEA Admin", username: "admin")
+        store.saveCredential(profile) // not in the library yet: added
+        #expect(store.credentials.map(\.id) == [profile.id])
+
+        profile.domain = "EMEA"
+        store.saveCredential(profile) // already there: replaced, not duplicated
+        #expect(store.credentials.count == 1)
+        #expect(store.credential(profile.id)?.domain == "EMEA")
+        store.flush()
+        #expect(persistence.saved?.credentials.map(\.domain) == ["EMEA"])
+    }
+
     @Test func deletingCredentialClearsReferences() {
         let (store, _) = makeStore()
         let profile = store.addCredential(CredentialProfile(name: "Shared", username: "u"))

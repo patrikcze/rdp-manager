@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 (2026-11-05)
+- Search results show in the main table instead of replacing the sidebar. Swapping the sidebar left stale rows drawn over it, or an empty Connections section, after the search was cleared.
+- Fix: the Delete key deleted the selected connection, and its saved password, without asking. Deleting connections now always asks first, from the keyboard and both context menus.
+- Fix: a new shared credential was never added. The editor opened as if editing an existing one, so Save changed nothing while the password still went to the Keychain under an unused entry (Settings › Remove Unused Passwords clears it).
+- Fix: a saved password showed as "Asked when connecting" after an app update. The check read the password itself, which macOS refuses to a newly signed build; it now asks only whether the Keychain item exists.
+
 ## 0.3.0 (2026-11-05)
 First published release. It includes everything planned for 0.2.0, which was never released on its own.
 

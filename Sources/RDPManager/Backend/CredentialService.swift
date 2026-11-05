@@ -27,8 +27,13 @@ struct CredentialService: Sendable {
         }.value
     }
 
+    /// Never reads the secret, so it neither prompts nor fails on a Keychain item an earlier
+    /// build of the app created.
     func hasPassword(for account: SecretAccount) async -> Bool {
-        ((try? await password(for: account)) ?? nil)?.isEmpty == false
+        let store = store
+        return await Task.detached(priority: .userInitiated) {
+            (try? store.hasPassword(for: account)) ?? false
+        }.value
     }
 
     /// Deletes Keychain items nothing refers to any more; returns how many.

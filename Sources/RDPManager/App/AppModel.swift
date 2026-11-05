@@ -26,6 +26,9 @@ final class AppModel {
     var editingFolder: Folder?
     var isCredentialManagerPresented = false
     var pendingFolderDeletion: Folder?
+    /// Connections waiting for the user to confirm their deletion. Deleting also removes their
+    /// saved passwords and can't be undone, so the Delete key alone never does it.
+    var pendingConnectionDeletion: [UUID] = []
     var alert: AppAlert?
 
     init() {
@@ -105,7 +108,7 @@ final class AppModel {
     func requestDelete(_ item: TreeItem) {
         switch item {
         case let .connection(id):
-            delete([.connection(id)])
+            requestDeleteConnections([id])
         case let .folder(id):
             guard let folder = inventory.folder(id) else { return }
             let isEmpty = inventory.allConnections(under: id).isEmpty && inventory.subfolders(of: id).isEmpty
@@ -115,6 +118,10 @@ final class AppModel {
                 pendingFolderDeletion = folder
             }
         }
+    }
+
+    func requestDeleteConnections(_ ids: [UUID]) {
+        pendingConnectionDeletion = ids.filter { inventory.connection($0) != nil }
     }
 
     func connect(_ connectionID: UUID) {

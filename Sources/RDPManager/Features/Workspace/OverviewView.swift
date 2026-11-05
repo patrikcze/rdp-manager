@@ -9,7 +9,8 @@ struct OverviewView: View {
     @State private var filter = ""
 
     var body: some View {
-        if model.sidebarSelection == .credentials {
+        // A search always shows its results, whatever the sidebar selects.
+        if model.sidebarSelection == .credentials, model.searchText.isEmpty {
             CredentialsView()
         } else if model.inventory.connections.isEmpty {
             emptyLibrary
@@ -171,8 +172,8 @@ struct OverviewView: View {
                     Button("Export as .rdp File…") { model.exportRDPFile(id) }
                 }
                 Divider()
-                Button("Delete", role: .destructive) {
-                    model.delete(Set(ids.map(TreeItem.connection)))
+                Button("Delete…", role: .destructive) {
+                    model.requestDeleteConnections(Array(ids))
                 }
             }
         } primaryAction: { ids in
