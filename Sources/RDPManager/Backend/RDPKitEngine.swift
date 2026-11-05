@@ -231,7 +231,7 @@ final class RDPKitEngine: SessionEngine {
                 onCertificate: { info in
                     // Runs during TLS, before any credential is sent: refusing here means the
                     // server never sees the password.
-                    let refusal = trustStore.trusted.refusal(of: info, port: port, acceptsUntrusted: false)
+                    let refusal = trustStore.refusal(of: info, port: port)
                     if refusal != nil {
                         run.cancellation.cancel()
                     }

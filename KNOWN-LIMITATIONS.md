@@ -18,6 +18,8 @@ Status as of 0.2.0. "Not verified live" means the code path exists and builds, b
 - **⌘C, ⌘V and other Mac editing shortcuts** go to Windows as Win+C, Win+V… while "Send ⌘ shortcuts to remote" is on. Use Control+C / Control+V, or turn the setting off. Mapping them to Ctrl, as Microsoft's client does, is planned.
 - **Keyboard layout of reconnected sessions.** The Mac's layout is announced when connecting, and Windows applies it only to new sessions.
 - **Intel Macs.** The build is Apple Silicon only.
+- **Desktops larger than 8192 pixels a side or 8192 × 4608 pixels** are refused on FreeRDP connections, as a guard against servers that ask for huge framebuffers.
+- **Imported libraries lose risky settings.** Standard RDP Security, shared folders, device redirection and KDC proxies are removed on import and must be turned back on in the editor.
 
 ## Sign-out works through the Run dialog
 Session › Sign Out of Windows… opens Run (Win+R), types `logoff` and presses Enter. RDP has no client sign-out message. If policy disables Run, the session stays connected and RDP Manager says so; sign out from the Start menu instead.
@@ -40,6 +42,7 @@ Still unverified:
 - **Standard RDP Security against a server that allows it:** Windows 11 refuses it by default, and the refusal message was verified.
 - Keyboard and pointer input in depth (shortcuts, Czech layout, dead keys).
 - HiDPI scaling when moving between displays.
-- Certificate prompt for a changed certificate.
+- Certificate prompt for a changed certificate, including a CA-valid replacement of a pinned certificate (unit-tested only).
+- FreeRDP desktop size limit and channel locking against a hostile server (unit-tested and reviewed against FreeRDP's source, not stress-tested).
 - Automatic reconnect after a real network interruption.
 - Detached windows and full screen with a live session.

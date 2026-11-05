@@ -36,6 +36,9 @@ final class RemoteSession: Identifiable {
     private(set) var certificateTrustedByUser = false
     /// The session runs on Standard RDP Security: nothing verifies the server.
     private(set) var isUnverifiedServer = false
+    /// Asks the user to allow Standard RDP Security for this session; set by the workspace.
+    @ObservationIgnored var confirmStandardRDPSecurity: @MainActor (RemoteSession) -> Bool = { _ in false }
+    @ObservationIgnored private var standardRDPConfirmed = false
     private(set) var tlsProtocol: String?
     private(set) var credentialPrompt: CredentialPrompt?
     private(set) var statistics: SessionStatistics?
@@ -111,6 +114,18 @@ final class RemoteSession: Identifiable {
         guard isClosed == false else { return }
         cancelPendingWork()
         reconnectCount = 0
+        // Standard RDP Security can't verify the server, so the user confirms it before any
+        // password is read or typed. Once per session tab; automatic reconnects don't ask.
+        if settings.security == .standardRDP, standardRDPConfirmed == false {
+            guard confirmStandardRDPSecurity(self) else {
+                phase = .ended(SessionEnd(
+                    kind: .userDisconnected, category: .none, title: "Not connected",
+                    message: "Standard RDP Security was not allowed. Choose another security layer in Edit… to connect."
+                ))
+                return
+            }
+            standardRDPConfirmed = true
+        }
         lastNotice = engineChoice.ignoredSettings.isEmpty
             ? nil
             : "RDPKit can't redirect \(engineChoice.ignoredSettings.joined(separator: ", ")). Set the engine to Automatic or FreeRDP."

@@ -20,14 +20,25 @@ done
 if [[ ! -d "$SRC/.git" ]]; then
   git clone --depth 1 --branch "$FREERDP_TAG" https://github.com/FreeRDP/FreeRDP.git "$SRC"
 fi
-[[ "$(git -C "$SRC" describe --tags)" == "$FREERDP_TAG" ]] || { echo "FreeRDP checkout is not $FREERDP_TAG"; exit 1; }
+[[ "$(git -C "$SRC" describe --tags --exact-match HEAD 2>/dev/null)" == "$FREERDP_TAG" ]] || { echo "FreeRDP checkout is not $FREERDP_TAG"; exit 1; }
 
-# Local patches (e.g. serial port support on macOS) live next to this script.
-for patch in "$ROOT"/Scripts/freerdp-patches/*.patch(N); do
-  if git -C "$SRC" apply --check "$patch" 2>/dev/null; then
-    git -C "$SRC" apply "$patch"
-    echo "Applied $(basename "$patch")"
+# Local patches (e.g. serial port support on macOS) live next to this script. The build uses
+# exactly the tagged source plus these patches: patches from an earlier run are taken off
+# again, and any other change to the checkout stops the build.
+patches=("$ROOT"/Scripts/freerdp-patches/*.patch(N))
+for patch in ${(Oa)patches}; do
+  if git -C "$SRC" apply --reverse --check "$patch" 2>/dev/null; then
+    git -C "$SRC" apply --reverse "$patch"
   fi
+done
+if [[ -n "$(git -C "$SRC" status --porcelain --ignored)" ]]; then
+  echo "FreeRDP checkout $SRC has local changes or extra files; delete it to start clean:"
+  git -C "$SRC" status --short --ignored | head -20
+  exit 1
+fi
+for patch in $patches; do
+  git -C "$SRC" apply "$patch"
+  echo "Applied $(basename "$patch")"
 done
 
 export PKG_CONFIG_PATH="$BREW/opt/krb5/lib/pkgconfig:$BREW/opt/libusb/lib/pkgconfig:$BREW/opt/cjson/lib/pkgconfig:$BREW/opt/openssl@3/lib/pkgconfig"
