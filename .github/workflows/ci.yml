@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Secrets and scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan for secrets
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Shell scripts parse
+        run: |
+          sudo apt-get install -y -qq zsh >/dev/null
+          for script in Scripts/*.sh; do zsh -n "$script" && echo "ok  $script"; done
+
+      - name: Workflows are valid
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+          ./actionlint -color
+
+  build-test:
+    name: Build, test and package
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false # the version comes from tags
+
+      - uses: ./.github/actions/setup-build
+        with:
+          xcode-version: ${{ vars.XCODE_VERSION || 'latest' }}
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        # Live server tests skip themselves without RDPM_LIVE_* variables.
+        run: swift test
+
+      - name: App bundle and DMG
+        # build-app.sh fails if a bundled binary references a build-machine path.
+        run: Scripts/make-dmg.sh
+
+      - name: Bundle checks
+        run: |
+          APP="build/RDP Manager.app"
+          codesign --verify --strict --deep "$APP"
+          /usr/libexec/PlistBuddy -c "Print :RDPManagerVersion" "$APP/Contents/Info.plist"
+          test -n "$(ls "$APP/Contents/Frameworks"/libfreerdp3*.dylib)"
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: RDP-Manager-dmg
+          path: build/RDP-Manager-*.dmg
+          retention-days: 14
+          if-no-files-found: error

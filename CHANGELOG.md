@@ -1,6 +1,8 @@
 # Changelog
 
 ## 0.2.0 (unreleased)
+- GitHub Actions: CI runs a secrets scan, script and workflow checks, then builds, tests and packages the DMG on every PR. Pushing a `v*` tag publishes the DMG and its SHA-256 on GitHub Releases, Developer ID signed and notarized when the signing secrets are set.
+- The app version comes from git tags (`Scripts/version.sh`); the About panel shows the full version, including pre-release and dev suffixes. `Scripts/tag-release.sh` tags a release after checking `master` and the CHANGELOG.
 - Security fixes from the 2026-11-04 review:
   - FreeRDP: clipboard and display calls hold the bridge lock, so a server disconnect can't free a channel mid-call.
   - FreeRDP: server-chosen desktop and graphics surface sizes are capped (8192 a side, 8192 × 4608 pixels); a larger desktop ends the session as "Desktop too large", a larger surface is refused. No force-unwrapped frame allocation.

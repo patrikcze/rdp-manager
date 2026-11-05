@@ -4,24 +4,25 @@
 #   SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" NOTARY_PROFILE=<profile> Scripts/make-dmg.sh
 #                                               signed, notarized and stapled for distribution
 # NOTARY_PROFILE is a notarytool keychain profile: xcrun notarytool store-credentials <profile>
+# The version comes from the git tag (Scripts/version.sh); VERSION=1.2.3 overrides it.
 set -euo pipefail
 
 ROOT="${0:A:h:h}"
 cd "$ROOT"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
-VERSION="${VERSION:-0.2.0}"
+FULL_VERSION="$(Scripts/version.sh --full)"
 
-SIGN_IDENTITY="$SIGN_IDENTITY" VERSION="$VERSION" Scripts/build-app.sh release
+SIGN_IDENTITY="$SIGN_IDENTITY" Scripts/build-app.sh release
 
 APP="build/RDP Manager.app"
-DMG="build/RDP-Manager-$VERSION.dmg"
+DMG="${DMG:-build/RDP-Manager-${FULL_VERSION//+/-}.dmg}"
 STAGING="build/dmg-staging"
 rm -rf "$STAGING" "$DMG"
 mkdir -p "$STAGING"
 cp -R "$APP" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 
-hdiutil create -volname "RDP Manager $VERSION" -srcfolder "$STAGING" -ov -format UDZO -fs APFS "$DMG" >/dev/null
+hdiutil create -volname "RDP Manager $FULL_VERSION" -srcfolder "$STAGING" -ov -format UDZO -fs APFS "$DMG" >/dev/null
 rm -rf "$STAGING"
 
 if [[ "$SIGN_IDENTITY" != "-" ]]; then

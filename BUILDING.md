@@ -14,6 +14,8 @@ Scripts/build-app.sh             # release "build/RDP Manager.app", libraries bu
 Scripts/make-dmg.sh              # build/RDP-Manager-<version>.dmg
 ```
 
+The version comes from the git tag (`Scripts/version.sh`). Releases are built and published by GitHub Actions when a `v*` tag is pushed; see RELEASING.md.
+
 `ThirdParty/` (FreeRDP source, build and install) is not checked in. `Scripts/build-freerdp.sh` recreates it from the pinned tag and applies any patches in `Scripts/freerdp-patches/`.
 
 **Xcode:** run `open Package.swift`, choose the `RDPManager` scheme and "My Mac", then press ⌘R (after `Scripts/build-freerdp.sh`).
@@ -38,7 +40,7 @@ Scripts/make-dmg.sh              # build/RDP-Manager-<version>.dmg
 
 ```bash
 xcrun notarytool store-credentials rdpm-notary      # once
-SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=rdpm-notary VERSION=0.2.0 Scripts/make-dmg.sh
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=rdpm-notary Scripts/make-dmg.sh
 ```
 
 This produces a signed, notarized and stapled DMG that opens on any Apple Silicon Mac running macOS 15 or later.

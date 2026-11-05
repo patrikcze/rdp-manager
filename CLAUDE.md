@@ -5,7 +5,8 @@ Native macOS RDP manager. Swift 6 (language mode 6), SwiftUI + AppKit, two engin
 ## Commands
 - `Scripts/build-freerdp.sh` must have run once (creates `ThirdParty/freerdp`; needs Homebrew `openssl@3 krb5 libusb cjson cmake ninja pkgconf`).
 - `swift build` builds everything.
-- `Scripts/make-dmg.sh` builds the distributable DMG.
+- `Scripts/make-dmg.sh` builds the distributable DMG. Versions come from git tags (`Scripts/version.sh`); never hard-code one.
+- Releases: `Scripts/tag-release.sh X.Y.Z --push` after the CHANGELOG section is dated; `.github/workflows/release.yml` publishes the DMG. CI (`ci.yml`) must pass on PRs. See RELEASING.md.
 - Live engine tests: `RDPM_LIVE_HOST=… RDPM_LIVE_USER=… RDPM_LIVE_PASSWORD=… swift test --filter LiveFreeRDP`. Never write credentials to files.
 - `swift test` must pass before you finish (unit + engine integration tests).
 - `Scripts/build-app.sh [debug]` produces `build/RDP Manager.app`, ad-hoc signed.

@@ -2,6 +2,8 @@
 
 # RDP Manager
 
+[![CI](https://github.com/patrikcze/rdp-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/patrikcze/rdp-manager/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/patrikcze/rdp-manager?include_prereleases)](https://github.com/patrikcze/rdp-manager/releases)
+
 A native macOS Remote Desktop manager for administrators who look after many Windows servers. You can organize hosts in nested groups, find any of them instantly, and work in several RDP sessions side by side in tabs or separate windows.
 
 Built with Swift 6, SwiftUI and AppKit on two RDP engines:
@@ -39,7 +41,7 @@ The app picks the engine per connection.
   - Smart card and YubiKey redirection (PC/SC).
   - Microphone and USB device redirection, and a shared folder.
 - **Sign out or disconnect:** Disconnect leaves the Windows session running. Sign Out of Windows… ends it. Ctrl+Option+End sends Ctrl+Alt+Del.
-- **Self-contained app:** every library is bundled. `Scripts/make-dmg.sh` builds a distributable DMG, signed and notarized with a Developer ID.
+- **Self-contained app:** every library is bundled. `Scripts/make-dmg.sh` builds a distributable DMG, signed and notarized with a Developer ID. Tagged releases publish the DMG on GitHub Releases (RELEASING.md).
 - **Security:** passwords stay in the Keychain. Certificates are checked before any credential is sent, and changed certificates are flagged. NLA is the default (Standard RDP Security only when you choose it), and there is no telemetry.
 - **Reliability:** bounded automatic reconnect after network drops, never after sign-in or certificate failures. Errors are clear and explain what to do next.
 - **Import and export:** Microsoft `.rdp` files in both directions (import reports unsupported settings; Export as .rdp File… writes a connection's effective settings, never its password), plus JSON library export and import without passwords.
