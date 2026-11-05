@@ -57,8 +57,10 @@ struct SessionPolicyTests {
         let store = InMemorySecretStore()
         try store.setPassword("s3cret", for: .credential(id))
         #expect(try store.password(for: .credential(id)) == "s3cret")
+        #expect(try store.hasPassword(for: .credential(id)))
         try store.deletePassword(for: .credential(id))
         #expect(try store.password(for: .credential(id)) == nil)
+        #expect(try store.hasPassword(for: .credential(id)) == false)
     }
 
     /// Writes, reads and deletes a real login-Keychain item. Opt in: it touches the user's
@@ -71,8 +73,10 @@ struct SessionPolicyTests {
         try store.setPassword("second ✓", for: account)
         #expect(try store.password(for: account) == "second ✓")
         #expect(try store.allAccounts() == [account])
+        #expect(try store.hasPassword(for: account))
         try store.deletePassword(for: account)
         #expect(try store.password(for: account) == nil)
+        #expect(try store.hasPassword(for: account) == false)
     }
 }
 

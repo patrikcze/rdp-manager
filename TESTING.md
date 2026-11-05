@@ -25,7 +25,7 @@ Live tests read credentials only from the environment. Never put them in files.
 | `RDPEngineIntegrationTests/CertificatePinTests` | A pinned certificate's replacement is refused as changed even when macOS trusts it; other hosts follow system trust; trust file is 0600/0700 |
 | `RDPEngineIntegrationTests/LiveFreeRDPTests` | Opt-in: real FreeRDP bridge sign-in (Auto, NLA), pixels arrive, certificate callback runs, wrong password fails authentication |
 
-Last run (2026-11-05, macOS 27.2, Xcode 27.2, Swift 6.4.2, Apple Silicon): **68 automated tests passed**. The 3 live tests passed against a Windows 11 VM on 2026-11-04 and were not rerun after the security fixes.
+Last run (2026-11-05, macOS 27.2, Xcode 27.2, Swift 6.4.2, Apple Silicon): **69 automated tests passed**. The 3 live tests passed against a Windows 11 VM on 2026-11-04 and were not rerun after the security fixes.
 
 ## Functional test matrix
 
