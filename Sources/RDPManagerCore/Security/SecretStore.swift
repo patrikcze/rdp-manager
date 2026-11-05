@@ -51,6 +51,14 @@ public protocol SecretStore: Sendable {
     func deletePassword(for account: SecretAccount) throws(SecretStoreError)
     /// Every account this store holds an item for, to clean up orphans.
     func allAccounts() throws(SecretStoreError) -> [SecretAccount]
+    /// Whether an item exists for `account`, without reading the secret.
+    func hasPassword(for account: SecretAccount) throws(SecretStoreError) -> Bool
+}
+
+extension SecretStore {
+    public func hasPassword(for account: SecretAccount) throws(SecretStoreError) -> Bool {
+        try password(for: account)?.isEmpty == false
+    }
 }
 
 /// macOS Keychain Services, generic passwords under one service name.
@@ -67,6 +75,22 @@ public struct KeychainSecretStore: SecretStore {
             kSecAttrService: service,
             kSecAttrAccount: account.rawValue,
         ]
+    }
+
+    /// Asks for the item's attributes only. Reading the password itself needs the item's
+    /// access list to name this app, and every ad-hoc signed build counts as a new app, so a
+    /// data read after an update is denied or prompts, and a saved password looked missing.
+    public func hasPassword(for account: SecretAccount) throws(SecretStoreError) -> Bool {
+        var query = baseQuery(account)
+        query[kSecReturnAttributes] = true
+        query[kSecMatchLimit] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess: return true
+        case errSecItemNotFound: return false
+        default: throw .keychain(status)
+        }
     }
 
     public func password(for account: SecretAccount) throws(SecretStoreError) -> String? {
