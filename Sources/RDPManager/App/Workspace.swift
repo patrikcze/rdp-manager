@@ -95,6 +95,7 @@ final class Workspace {
     }
 
     private func add(_ session: RemoteSession) {
+        session.confirmStandardRDPSecurity = { confirmStandardRDPSecurity(for: $0) }
         session.onDesktopShown = { [weak inventory] session in
             if let id = session.connectionID {
                 inventory?.recordConnected(id)

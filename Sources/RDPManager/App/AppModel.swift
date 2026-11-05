@@ -40,8 +40,9 @@ final class AppModel {
             inventory = InventoryStore(persistence: JSONFileInventoryPersistence(fileURL: supportURL))
             credentials = CredentialService(store: KeychainSecretStore(service: Self.keychainService))
         }
+        // Sample mode keeps certificate trust in memory too, like everything else it touches.
         trustStore = CertificateTrustStore(
-            fileURL: supportURL.deletingLastPathComponent().appending(path: "trusted-certificates.json")
+            fileURL: isInMemorySampleMode ? nil : supportURL.deletingLastPathComponent().appending(path: "trusted-certificates.json")
         )
         workspace = Workspace(inventory: inventory, credentials: credentials, trustStore: trustStore)
     }
@@ -154,9 +155,12 @@ final class AppModel {
         }
         alert = AppAlert(
             title: "Imported \(imported) of \(panel.urls.count) connection\(panel.urls.count == 1 ? "" : "s")",
-            message: notes.isEmpty ? "Every setting was imported." : notes.joined(separator: "\n")
+            message: (notes + [Self.rdpImportScope]).joined(separator: "\n\n")
         )
     }
+
+    /// What an .rdp import never brings along, said after every import.
+    static let rdpImportScope = "Only the address, user name, display, clipboard, sound and reconnect settings are read from .rdp files. Security and device redirection settings are never imported; set them in Edit…."
 
     func exportLibrary() {
         let panel = NSSavePanel()
@@ -178,12 +182,15 @@ final class AppModel {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let archive = try LibraryArchive.decode(Data(contentsOf: url))
-            let imported = archive.inventoryForImport(under: targetFolderID)
+            let result = archive.inventoryForImport(under: targetFolderID)
+            let imported = result.inventory
             inventory.merge(imported)
-            alert = AppAlert(
-                title: "Library imported",
-                message: "\(imported.connections.count) connections, \(imported.folders.count) groups and \(imported.credentials.count) credentials were added. Passwords are not part of exports; you'll be asked for them."
-            )
+            var message = "\(imported.connections.count) connections, \(imported.folders.count) groups and \(imported.credentials.count) credentials were added. Passwords are not part of exports; you'll be asked for them."
+            if result.removedSettings.isEmpty == false {
+                message += "\n\nFor your safety these settings were not imported. Turn them on in Edit… if you trust them:\n"
+                    + result.removedSettings.map { "• \($0)" }.joined(separator: "\n")
+            }
+            alert = AppAlert(title: "Library imported", message: message)
         } catch {
             alert = AppAlert(title: "Import failed", message: error.localizedDescription)
         }

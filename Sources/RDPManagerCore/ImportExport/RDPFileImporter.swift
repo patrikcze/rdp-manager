@@ -107,7 +107,7 @@ public enum RDPFileImporter {
             ("audiocapturemode", "Microphone redirection"),
             ("redirectcomports", "Serial port redirection"),
         ] where values[key].flatMap(Int.init) == 1 {
-            warnings.append("\(label) is not supported.")
+            warnings.append("\(label) was not imported.")
         }
         if values["use multimon"].flatMap(Int.init) == 1 {
             warnings.append("Multiple monitors were requested; the session uses one window.")

@@ -22,6 +22,9 @@ public final class InventoryStore {
     public private(set) var inventory: Inventory
     /// Why the last save or load failed, for the app to show; nil when fine.
     public private(set) var persistenceError: String?
+    /// The saved library exists but could not be read. Nothing is written over it this launch,
+    /// and nothing may be inferred from the (empty) inventory, such as unused passwords.
+    public private(set) var loadFailed = false
 
     @ObservationIgnored private let persistence: any InventoryPersistence
     @ObservationIgnored private var saveTask: Task<Void, Never>?
@@ -34,7 +37,8 @@ public final class InventoryStore {
             inventory = try persistence.load() ?? Inventory()
         } catch {
             inventory = Inventory()
-            persistenceError = "The connection library could not be read: \(error.localizedDescription)"
+            loadFailed = true
+            persistenceError = Self.loadFailureMessage(error)
         }
     }
 
@@ -451,7 +455,12 @@ public final class InventoryStore {
         }
     }
 
+    private static func loadFailureMessage(_ error: any Error) -> String {
+        "The connection library could not be read (\(error.localizedDescription)). It is left untouched: changes made now are not saved. Restore the file or quit and fix it, then reopen RDP Manager."
+    }
+
     private func saveNow() {
+        guard loadFailed == false else { return } // never overwrite a library we couldn't read
         do {
             try persistence.save(inventory)
             persistenceError = nil

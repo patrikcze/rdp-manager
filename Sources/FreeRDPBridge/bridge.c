@@ -13,6 +13,7 @@
 #include <freerdp/client/cliprdr.h>
 #include <freerdp/client/cmdline.h>
 #include <freerdp/client/disp.h>
+#include <freerdp/client/rdpgfx.h>
 #include <freerdp/codec/color.h>
 #include <freerdp/constants.h>
 #include <freerdp/error.h>
@@ -21,6 +22,7 @@
 #include <freerdp/utils/helpers.h>
 #include <freerdp/channels/channels.h>
 #include <freerdp/channels/disp.h>
+#include <freerdp/channels/rdpgfx.h>
 #include <winpr/crt.h>
 #include <winpr/input.h>
 #include <winpr/string.h>
@@ -31,14 +33,41 @@
 struct rm_session {
     rdpContext *context;
     rm_callbacks callbacks;
-    pthread_mutex_t lock; // guards connected, disp, cliprdr, local_clipboard
+    // Guards connected, disp, cliprdr, clipboard_shared and local_clipboard. Recursive: a
+    // channel write can close its channel on the calling thread, which publishes the
+    // disconnect event that takes this lock again.
+    //
+    // Channel pointers are used only while this lock is held. FreeRDP publishes the channel's
+    // disconnected or terminated event (whose handlers clear the pointer under this lock)
+    // before it frees the channel, so a holder of the lock never sees a freed channel.
+    pthread_mutex_t lock;
     bool connected;
     DispClientContext *disp;
     CliprdrClientContext *cliprdr;
-    char *local_clipboard; // UTF-8 text offered to the server
+    bool clipboard_shared;  // the user's live Share Clipboard switch
+    char *local_clipboard;  // UTF-8 text offered to the server; NULL when not shared
     rm_security requested_security;
     uint32_t requested_format;
+    rm_failure failure;     // why the bridge itself ended the session
+    pcRdpgfxCreateSurface gfx_create_surface; // FreeRDP GDI's, wrapped by rm_gfx_create_surface
 };
+
+/// Records the first reason the bridge ends the session, for on_ended.
+static void rm_fail(rm_session *session, rm_failure failure) {
+    if (!session)
+        return;
+    pthread_mutex_lock(&session->lock);
+    if (session->failure == RM_FAILURE_NONE)
+        session->failure = failure;
+    pthread_mutex_unlock(&session->lock);
+}
+
+/// Server-chosen desktop sizes are bounded before any framebuffer is allocated: FreeRDP takes
+/// 16-bit sizes from the server (up to 17 GB of BGRA), and the app copies the framebuffer.
+static bool rm_desktop_size_allowed(UINT32 width, UINT32 height) {
+    return width > 0 && height > 0 && width <= RM_MAX_DESKTOP_SIDE && height <= RM_MAX_DESKTOP_SIDE &&
+           (uint64_t)width * height <= RM_MAX_DESKTOP_PIXELS;
+}
 
 typedef struct {
     rdpClientContext common;
@@ -82,9 +111,13 @@ static BOOL rm_desktop_resize(rdpContext *context) {
     rdpGdi *gdi = context->gdi;
     const UINT32 width = freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth);
     const UINT32 height = freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight);
+    rm_session *session = owner_of(context);
+    if (!rm_desktop_size_allowed(width, height)) {
+        rm_fail(session, RM_FAILURE_DESKTOP_TOO_LARGE);
+        return FALSE;
+    }
     if (!gdi_resize(gdi, width, height))
         return FALSE;
-    rm_session *session = owner_of(context);
     // The whole new surface is the dirty region.
     if (session && session->callbacks.on_frame)
         session->callbacks.on_frame(session->callbacks.context, gdi->primary_buffer, gdi->width, gdi->height,
@@ -176,7 +209,7 @@ static UINT rm_cliprdr_monitor_ready(CliprdrClientContext *cliprdr, const CLIPRD
         return rc;
     rm_session *session = cliprdr->custom;
     pthread_mutex_lock(&session->lock);
-    const bool has_text = session->local_clipboard != NULL;
+    const bool has_text = session->clipboard_shared && session->local_clipboard != NULL;
     pthread_mutex_unlock(&session->lock);
     return rm_cliprdr_send_format_list(cliprdr, has_text);
 }
@@ -194,9 +227,14 @@ static UINT rm_cliprdr_server_format_list(CliprdrClientContext *cliprdr, const C
     UINT rc = cliprdr->ClientFormatListResponse(cliprdr, &response);
     if (rc != CHANNEL_RC_OK)
         return rc;
+    rm_session *session = cliprdr->custom;
+    pthread_mutex_lock(&session->lock);
+    const bool shared = session->clipboard_shared;
+    pthread_mutex_unlock(&session->lock);
+    if (!shared)
+        return CHANNEL_RC_OK; // not fetched while sharing is off
     for (UINT32 i = 0; i < list->numFormats; i++) {
         if (list->formats[i].formatId == CF_UNICODETEXT) {
-            rm_session *session = cliprdr->custom;
             session->requested_format = CF_UNICODETEXT;
             CLIPRDR_FORMAT_DATA_REQUEST request = { 0 };
             request.common.msgType = CB_FORMAT_DATA_REQUEST;
@@ -222,7 +260,7 @@ static UINT rm_cliprdr_server_format_data_request(CliprdrClientContext *cliprdr,
     WCHAR *wide = NULL;
     size_t wide_chars = 0;
     pthread_mutex_lock(&session->lock);
-    if (request->requestedFormatId == CF_UNICODETEXT && session->local_clipboard)
+    if (request->requestedFormatId == CF_UNICODETEXT && session->clipboard_shared && session->local_clipboard)
         wide = ConvertUtf8ToWCharAlloc(session->local_clipboard, &wide_chars);
     pthread_mutex_unlock(&session->lock);
     if (wide) {
@@ -240,7 +278,10 @@ static UINT rm_cliprdr_server_format_data_request(CliprdrClientContext *cliprdr,
 static UINT rm_cliprdr_server_format_data_response(CliprdrClientContext *cliprdr,
                                                    const CLIPRDR_FORMAT_DATA_RESPONSE *response) {
     rm_session *session = cliprdr->custom;
-    if (response->common.msgFlags != CB_RESPONSE_OK || session->requested_format != CF_UNICODETEXT ||
+    pthread_mutex_lock(&session->lock);
+    const bool shared = session->clipboard_shared;
+    pthread_mutex_unlock(&session->lock);
+    if (!shared || response->common.msgFlags != CB_RESPONSE_OK || session->requested_format != CF_UNICODETEXT ||
         !response->requestedFormatData || response->common.dataLen < sizeof(WCHAR))
         return CHANNEL_RC_OK;
     const size_t chars = response->common.dataLen / sizeof(WCHAR);
@@ -252,6 +293,20 @@ static UINT rm_cliprdr_server_format_data_response(CliprdrClientContext *cliprdr
 }
 
 // MARK: - Channels
+
+/// The graphics pipeline allocates every surface the server creates; bound them like the
+/// desktop.
+static UINT rm_gfx_create_surface(RdpgfxClientContext *gfx, const RDPGFX_CREATE_SURFACE_PDU *create) {
+    rdpGdi *gdi = gfx ? (rdpGdi *)gfx->custom : NULL;
+    rm_session *session = gdi ? owner_of(gdi->context) : NULL;
+    if (!session || !session->gfx_create_surface)
+        return ERROR_INTERNAL_ERROR;
+    if (!rm_desktop_size_allowed(create->width, create->height)) {
+        rm_fail(session, RM_FAILURE_DESKTOP_TOO_LARGE);
+        return ERROR_INVALID_DATA; // the surface is refused and never allocated
+    }
+    return session->gfx_create_surface(gfx, create);
+}
 
 static void rm_on_channel_connected(void *ctx, const ChannelConnectedEventArgs *e) {
     rdpContext *context = ctx;
@@ -274,23 +329,44 @@ static void rm_on_channel_connected(void *ctx, const ChannelConnectedEventArgs *
         pthread_mutex_unlock(&session->lock);
     } else {
         freerdp_client_OnChannelConnectedEventHandler(context, e);
+        if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0) {
+            // FreeRDP's handler has just set up the GDI pipeline callbacks.
+            RdpgfxClientContext *gfx = (RdpgfxClientContext *)e->pInterface;
+            if (gfx && gfx->CreateSurface && gfx->CreateSurface != rm_gfx_create_surface) {
+                session->gfx_create_surface = gfx->CreateSurface;
+                gfx->CreateSurface = rm_gfx_create_surface;
+            }
+        }
     }
+}
+
+/// Forgets a channel before FreeRDP frees it. Taking the lock also waits for any call that
+/// is using the channel right now (see rm_session.lock).
+static bool rm_forget_channel(rm_session *session, const char *name) {
+    if (strcmp(name, DISP_DVC_CHANNEL_NAME) == 0) {
+        pthread_mutex_lock(&session->lock);
+        session->disp = NULL;
+        pthread_mutex_unlock(&session->lock);
+        return true;
+    }
+    if (strcmp(name, CLIPRDR_SVC_CHANNEL_NAME) == 0) {
+        pthread_mutex_lock(&session->lock);
+        session->cliprdr = NULL;
+        pthread_mutex_unlock(&session->lock);
+        return true;
+    }
+    return false;
 }
 
 static void rm_on_channel_disconnected(void *ctx, const ChannelDisconnectedEventArgs *e) {
     rdpContext *context = ctx;
-    rm_session *session = owner_of(context);
-    if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0) {
-        pthread_mutex_lock(&session->lock);
-        session->disp = NULL;
-        pthread_mutex_unlock(&session->lock);
-    } else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0) {
-        pthread_mutex_lock(&session->lock);
-        session->cliprdr = NULL;
-        pthread_mutex_unlock(&session->lock);
-    } else {
+    if (!rm_forget_channel(owner_of(context), e->name))
         freerdp_client_OnChannelDisconnectedEventHandler(context, e);
-    }
+}
+
+// A dynamic channel can be freed without a disconnected event first.
+static void rm_on_channel_terminated(void *ctx, const ChannelTerminatedEventArgs *e) {
+    (void)rm_forget_channel(owner_of((rdpContext *)ctx), e->name);
 }
 
 // MARK: - Connection callbacks
@@ -301,7 +377,8 @@ static BOOL rm_pre_connect(freerdp *instance) {
         !freerdp_settings_set_uint32(settings, FreeRDP_OsMinorType, OSMINORTYPE_UNSPECIFIED))
         return FALSE;
     if (PubSub_SubscribeChannelConnected(instance->context->pubSub, rm_on_channel_connected) < 0 ||
-        PubSub_SubscribeChannelDisconnected(instance->context->pubSub, rm_on_channel_disconnected) < 0)
+        PubSub_SubscribeChannelDisconnected(instance->context->pubSub, rm_on_channel_disconnected) < 0 ||
+        PubSub_SubscribeChannelTerminated(instance->context->pubSub, rm_on_channel_terminated) < 0)
         return FALSE;
     return TRUE;
 }
@@ -313,6 +390,12 @@ static BOOL rm_post_connect(freerdp *instance) {
     if (owner && owner->requested_security != RM_SECURITY_RDP &&
         freerdp_settings_get_uint32(instance->context->settings, FreeRDP_SelectedProtocol) == 0) {
         freerdp_set_last_error_log(instance->context, FREERDP_ERROR_SECURITY_NEGO_CONNECT_FAILED);
+        return FALSE;
+    }
+    // gdi_init allocates the server-chosen desktop size.
+    if (!rm_desktop_size_allowed(freerdp_settings_get_uint32(instance->context->settings, FreeRDP_DesktopWidth),
+                                 freerdp_settings_get_uint32(instance->context->settings, FreeRDP_DesktopHeight))) {
+        rm_fail(owner, RM_FAILURE_DESKTOP_TOO_LARGE);
         return FALSE;
     }
     if (!gdi_init(instance, PIXEL_FORMAT_BGRA32))
@@ -355,6 +438,7 @@ static void rm_post_disconnect(freerdp *instance) {
     }
     PubSub_UnsubscribeChannelConnected(instance->context->pubSub, rm_on_channel_connected);
     PubSub_UnsubscribeChannelDisconnected(instance->context->pubSub, rm_on_channel_disconnected);
+    PubSub_UnsubscribeChannelTerminated(instance->context->pubSub, rm_on_channel_terminated);
     gdi_free(instance);
 }
 
@@ -532,9 +616,14 @@ rm_session *rm_session_new(const rm_config *config, const rm_callbacks *callback
     rm_session *session = calloc(1, sizeof(rm_session));
     if (!session)
         return NULL;
-    pthread_mutex_init(&session->lock, NULL);
+    pthread_mutexattr_t attributes;
+    pthread_mutexattr_init(&attributes);
+    pthread_mutexattr_settype(&attributes, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&session->lock, &attributes);
+    pthread_mutexattr_destroy(&attributes);
     session->callbacks = *callbacks;
     session->requested_security = config->security;
+    session->clipboard_shared = config->clipboard;
 
     RDP_CLIENT_ENTRY_POINTS entry;
     rm_client_entry(&entry);
@@ -584,8 +673,12 @@ void rm_session_run(rm_session *session) {
     freerdp_client_stop(context);
 
 done:
-    if (session->callbacks.on_ended)
-        session->callbacks.on_ended(session->callbacks.context, last_error, error_info);
+    if (session->callbacks.on_ended) {
+        pthread_mutex_lock(&session->lock);
+        const rm_failure failure = session->failure;
+        pthread_mutex_unlock(&session->lock);
+        session->callbacks.on_ended(session->callbacks.context, last_error, error_info, failure);
+    }
 }
 
 void rm_session_cancel(rm_session *session) {
@@ -644,10 +737,7 @@ void rm_session_send_pointer(rm_session *session, uint16_t flags, uint16_t x, ui
 
 bool rm_session_resize(rm_session *session, uint32_t width, uint32_t height, uint32_t desktop_scale,
                        uint32_t device_scale) {
-    pthread_mutex_lock(&session->lock);
-    DispClientContext *disp = session->connected ? session->disp : NULL;
-    pthread_mutex_unlock(&session->lock);
-    if (!disp || !disp->SendMonitorLayout)
+    if (!rm_desktop_size_allowed(width, height))
         return false;
     DISPLAY_CONTROL_MONITOR_LAYOUT layout = { 0 };
     layout.Flags = DISPLAY_CONTROL_MONITOR_PRIMARY;
@@ -656,18 +746,49 @@ bool rm_session_resize(rm_session *session, uint32_t width, uint32_t height, uin
     layout.Orientation = ORIENTATION_LANDSCAPE;
     layout.DesktopScaleFactor = desktop_scale;
     layout.DeviceScaleFactor = device_scale;
-    return disp->SendMonitorLayout(disp, 1, &layout) == CHANNEL_RC_OK;
+    // The lock stays held through the call so the channel cannot be freed under it.
+    pthread_mutex_lock(&session->lock);
+    DispClientContext *disp = session->connected ? session->disp : NULL;
+    const bool sent = disp && disp->SendMonitorLayout && disp->SendMonitorLayout(disp, 1, &layout) == CHANNEL_RC_OK;
+    pthread_mutex_unlock(&session->lock);
+    return sent;
 }
 
 void rm_session_set_local_clipboard_text(rm_session *session, const char *utf8) {
     pthread_mutex_lock(&session->lock);
-    free(session->local_clipboard);
-    session->local_clipboard = utf8 ? strdup(utf8) : NULL;
-    CliprdrClientContext *cliprdr = session->connected ? session->cliprdr : NULL;
-    const bool has_text = session->local_clipboard != NULL;
+    if (session->clipboard_shared) {
+        free(session->local_clipboard);
+        session->local_clipboard = utf8 ? strdup(utf8) : NULL;
+        CliprdrClientContext *cliprdr = session->connected ? session->cliprdr : NULL;
+        if (cliprdr)
+            (void)rm_cliprdr_send_format_list(cliprdr, session->local_clipboard != NULL);
+    }
     pthread_mutex_unlock(&session->lock);
-    if (cliprdr)
-        (void)rm_cliprdr_send_format_list(cliprdr, has_text);
+}
+
+void rm_session_set_clipboard_shared(rm_session *session, bool shared) {
+    pthread_mutex_lock(&session->lock);
+    session->clipboard_shared = shared;
+    if (!shared) {
+        // Forget the Mac text and withdraw the offer, so the server can't fetch it any more.
+        free(session->local_clipboard);
+        session->local_clipboard = NULL;
+        CliprdrClientContext *cliprdr = session->connected ? session->cliprdr : NULL;
+        if (cliprdr)
+            (void)rm_cliprdr_send_format_list(cliprdr, false);
+    }
+    pthread_mutex_unlock(&session->lock);
+}
+
+bool rm_session_offers_clipboard_text(rm_session *session) {
+    pthread_mutex_lock(&session->lock);
+    const bool offers = session->clipboard_shared && session->local_clipboard != NULL;
+    pthread_mutex_unlock(&session->lock);
+    return offers;
+}
+
+bool rm_desktop_size_is_allowed(uint32_t width, uint32_t height) {
+    return rm_desktop_size_allowed(width, height);
 }
 
 const char *rm_error_name(uint32_t last_error) {

@@ -181,3 +181,36 @@ struct InventoryStoreTests {
         #expect(copy?.lastConnectedAt == nil)
     }
 }
+
+@Suite("Unreadable library")
+@MainActor
+struct UnreadableLibraryTests {
+    @Test func anUnreadableLibraryIsNeverOverwritten() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "rdpm-inv-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appending(path: "inventory.json")
+        let damaged = Data("{ not json".utf8)
+        try damaged.write(to: file)
+
+        let store = InventoryStore(persistence: JSONFileInventoryPersistence(fileURL: file), saveDelay: .zero)
+        #expect(store.loadFailed)
+        #expect(store.persistenceError != nil)
+        #expect(store.connections.isEmpty)
+
+        store.addConnection(Connection(name: "new", host: "new"))
+        store.flush()
+        #expect(try Data(contentsOf: file) == damaged)
+    }
+
+    @Test func aMissingLibraryStartsEmptyAndSaves() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "rdpm-inv-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appending(path: "inventory.json")
+        let store = InventoryStore(persistence: JSONFileInventoryPersistence(fileURL: file), saveDelay: .zero)
+        #expect(store.loadFailed == false)
+        store.addConnection(Connection(name: "new", host: "new"))
+        store.flush()
+        #expect(FileManager.default.fileExists(atPath: file.path))
+    }
+}

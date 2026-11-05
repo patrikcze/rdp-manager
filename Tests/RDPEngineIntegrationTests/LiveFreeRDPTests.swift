@@ -82,7 +82,7 @@ final class LiveProbe: @unchecked Sendable {
             probe.lock.withLock { probe.certificateSeen = true }
             return RM_CERT_ACCEPT_ONCE // A test VM's self-signed certificate.
         }
-        callbacks.on_ended = { context, lastError, errorInfo in
+        callbacks.on_ended = { context, lastError, errorInfo, _ in
             let probe = Unmanaged<LiveProbe>.fromOpaque(context!).takeUnretainedValue()
             probe.lock.withLock {
                 probe.lastError = lastError

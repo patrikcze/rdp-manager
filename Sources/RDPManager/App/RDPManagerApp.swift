@@ -124,6 +124,25 @@ struct AppCommands: Commands {
     }
 }
 
+/// Asked before a connection that uses Standard RDP Security, before any password is used.
+@MainActor
+func confirmStandardRDPSecurity(for session: RemoteSession) -> Bool {
+    let alert = NSAlert()
+    alert.alertStyle = .critical
+    alert.messageText = "Connect to \(session.address.host) without verifying the server?"
+    alert.informativeText = """
+    “\(session.title)” uses Standard RDP Security. The server's identity is not checked and the \
+    encryption is weak, so anyone on the network path could pose as \(session.address.host):\(session.address.port) \
+    and read your password and session.
+
+    Continue only on a network you trust, for a server that offers nothing better.
+    """
+    alert.addButton(withTitle: "Cancel")
+    alert.addButton(withTitle: "Connect Anyway")
+    alert.buttons.last?.hasDestructiveAction = true
+    return alert.runModal() == .alertSecondButtonReturn
+}
+
 /// Signing out closes the user's programs on the server; it is never done without asking.
 @MainActor
 func confirmSignOut(_ session: RemoteSession) -> Bool {

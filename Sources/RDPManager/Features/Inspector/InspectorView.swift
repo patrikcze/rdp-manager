@@ -173,6 +173,20 @@ private struct ConnectionInspector: View {
                 setting("Clipboard", resolved.clipboardEnabled ? "On" : "Off", .clipboard)
                 setting("Audio", resolved.audioPlaybackEnabled ? "On" : "Off", .audio)
                 setting("Auto-reconnect", resolved.autoReconnect ? "On" : "Off", .autoReconnect)
+                setting("Security", resolved.security.label, .security)
+                if resolved.security == .standardRDP {
+                    Label("The server's identity is not verified; you'll be asked before connecting.", systemImage: "exclamationmark.shield.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+            let shared = Self.sharedResources(resolved)
+            if shared.isEmpty == false {
+                Section("Shared with the Server") {
+                    ForEach(shared, id: \.self) { item in
+                        Label(item, systemImage: "arrow.up.forward.app")
+                    }
+                }
             }
             if connection.notes.isEmpty == false {
                 Section("Notes") {
@@ -189,6 +203,17 @@ private struct ConnectionInspector: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// What of this Mac the server gets access to, as the user should see it before connecting.
+    static func sharedResources(_ settings: ResolvedSettings) -> [String] {
+        var items: [String] = []
+        if let path = settings.sharedFolderPath { items.append("Folder \(path)") }
+        if settings.printersEnabled { items.append("Printers") }
+        if settings.smartCardsEnabled { items.append("Smart cards") }
+        if settings.microphoneEnabled { items.append("Microphone") }
+        if settings.usbDevices.isEmpty == false { items.append("USB \(settings.usbDevices.joined(separator: ", "))") }
+        return items
     }
 
     private func setting(_ title: String, _ value: String, _ key: SettingKey) -> some View {

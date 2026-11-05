@@ -14,15 +14,18 @@ Live tests read credentials only from the environment. Never put them in files.
 |---|---|
 | `RDPManagerCoreTests/HostAddressTests` | Quick Connect parsing: host, host:port, IPv4/IPv6, rdp:// prefixes, invalid input |
 | `RDPManagerCoreTests/InventoryStoreTests` | Nested groups, reordering, move-cycle prevention, deleting groups with or without contents, settings inheritance and its sources, credential references, orphaned Keychain accounts, search, persistence (0600 permissions), newer schema refused |
-| `RDPManagerCoreTests/ImportExportTests` | `.rdp` import and warnings, library export without passwords, identifier remapping |
+| `RDPManagerCoreTests/ImportExportTests` | `.rdp` import and warnings, library export without passwords, identifier remapping, risky settings removed on library import |
+| `RDPManagerCoreTests/UnreadableLibraryTests` | A damaged `inventory.json` is never overwritten; a missing one starts empty and saves |
 | `RDPManagerCoreTests/RDPFileExportTests` | `.rdp` export: effective settings, `DOMAIN\user` from profiles, no password or Mac paths, no line injection, safe file names, round trip through the importer |
 | `RDPManagerCoreTests/SessionPolicyTests` | Bounded reconnect, no retry for authentication/certificate/server failures, credential plans |
 | `RDPManagerCoreTests/EngineChoiceTests` | Which engine each feature selects, forced engines and ignored settings, USB ID normalization, old libraries still decode |
 | `RDPEngineIntegrationTests/EngineFailureTests` | Real RDPKit runs against local sockets: refused port, non-RDP service, silent server, wrong password |
 | `RDPEngineIntegrationTests/FreeRDPEndMappingTests` | FreeRDP errors → re-prompt, sign-out, reconnect, Standard RDP refusal; PEM chains; wheel encoding; `DOMAIN\user` splitting |
+| `RDPEngineIntegrationTests/FreeRDPBridgeSafetyTests` | Real C bridge (no network): clipboard revocation forgets offered text, resize without a channel is refused, desktop size limits, overflow-safe frame sizes |
+| `RDPEngineIntegrationTests/CertificatePinTests` | A pinned certificate's replacement is refused as changed even when macOS trusts it; other hosts follow system trust; trust file is 0600/0700 |
 | `RDPEngineIntegrationTests/LiveFreeRDPTests` | Opt-in: real FreeRDP bridge sign-in (Auto, NLA), pixels arrive, certificate callback runs, wrong password fails authentication |
 
-Last run (2026-11-04, macOS 27.2, Xcode 27.2, Swift 6.4.2, Apple Silicon): **49 automated tests passed**. The 3 live tests passed against a Windows 11 VM.
+Last run (2026-11-05, macOS 27.2, Xcode 27.2, Swift 6.4.2, Apple Silicon): **68 automated tests passed**. The 3 live tests passed against a Windows 11 VM on 2026-11-04 and were not rerun after the security fixes.
 
 ## Functional test matrix
 
@@ -49,6 +52,9 @@ Last run (2026-11-04, macOS 27.2, Xcode 27.2, Swift 6.4.2, Apple Silicon): **49 
 | Control+C in a Windows app → Mac clipboard | PASS | 2026-11-04, both engines: Notepad, Control+A then Control+C sent as real macOS key events through the app; text arrived on the Mac clipboard |
 | Clipboard Mac → Windows | NOT TESTED live | |
 | Network interruption → reconnect | NOT TESTED live | Policy unit-tested |
+| Server disconnect racing resize/clipboard (FreeRDP) | NOT TESTED live | Lock design checked against FreeRDP 3.32.2 teardown order; no AddressSanitizer stress run |
+| Oversized server desktop (FreeRDP) | NOT TESTED live | Limits unit-tested; no malicious test server |
+| Standard RDP confirmation dialog | NOT TESTED live | |
 
 ## Live testing checklist
 1. `Scripts/build-app.sh && open "build/RDP Manager.app"`

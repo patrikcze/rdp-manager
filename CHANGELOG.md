@@ -1,6 +1,17 @@
 # Changelog
 
 ## 0.2.0 (unreleased)
+- Security fixes from the 2026-11-04 review:
+  - FreeRDP: clipboard and display calls hold the bridge lock, so a server disconnect can't free a channel mid-call.
+  - FreeRDP: server-chosen desktop and graphics surface sizes are capped (8192 a side, 8192 × 4608 pixels); a larger desktop ends the session as "Desktop too large", a larger surface is refused. No force-unwrapped frame allocation.
+  - FreeRDP: turning clipboard sharing off forgets the offered Mac text and refuses later server requests.
+  - Library import removes Standard RDP Security, the shared folder, printers, smart cards, microphone, USB devices and KDC proxy, and lists what it removed.
+  - Standard RDP Security needs a confirmation before any password is used. The connection inspector shows the security layer and what is shared with the server.
+  - A certificate the user trusted is a pin on both engines, even against a replacement macOS trusts.
+- Fix: an unreadable library is never overwritten, and Remove Unused Passwords is disabled until it can be read.
+- Fix: the certificate trust file is owner-only (0600 in a 0700 folder); sample mode keeps trust in memory.
+- Fix: `.rdp` import says what it reads instead of "Every setting was imported".
+- `Scripts/build-freerdp.sh` builds only from an unmodified FreeRDP checkout.
 - FreeRDP 3.32.2 as a second engine, chosen per connection, with:
   - Kerberos (NTLM fallback or Kerberos only, KDC proxy)
   - opt-in Standard RDP Security

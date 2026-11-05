@@ -71,7 +71,7 @@ struct ImportExportTests {
         #expect(text.lowercased().contains("password") == false)
         #expect(text.contains("lastConnectedAt") == false)
 
-        let imported = try LibraryArchive.decode(data).inventoryForImport(under: nil)
+        let imported = try LibraryArchive.decode(data).inventoryForImport(under: nil).inventory
         #expect(imported.folders.count == 2)
         let newParent = try #require(imported.folders.first { $0.name == "EMEA" })
         let newChild = try #require(imported.folders.first { $0.name == "DC" })
@@ -83,6 +83,47 @@ struct ImportExportTests {
         #expect(newHost.settings.credential == .shared(newProfile.id))
         #expect(newChild.defaults.credential == .shared(newProfile.id))
         #expect(newHost.lastConnectedAt == nil)
+    }
+
+    @MainActor @Test func importRemovesWeakSecurityAndLocalResourceGrants() throws {
+        let risky = ConnectionSettings(
+            security: .standardRDP, kerberosKDCProxyURL: "https://kdc.example.com/KdcProxy",
+            printersEnabled: true, smartCardsEnabled: true, microphoneEnabled: true,
+            usbDevices: ["1050:0407"], sharedFolderPath: "/"
+        )
+        let folder = Folder(name: "Shady", defaults: risky)
+        let host = Connection(name: "DC01", host: "dc01", folderID: folder.id, settings: risky)
+        let safeHost = Connection(name: "APP01", host: "app01", settings: ConnectionSettings(
+            security: .nla, printersEnabled: false, sharedFolderPath: nil
+        ))
+        let data = try LibraryArchive(inventory: Inventory(folders: [folder], connections: [host, safeHost])).encoded()
+
+        let result = try LibraryArchive.decode(data).inventoryForImport(under: nil)
+        for settings in result.inventory.folders.map(\.defaults) + result.inventory.connections.map(\.settings) {
+            #expect(settings.security != .standardRDP)
+            #expect(settings.sharedFolderPath == nil)
+            #expect(settings.printersEnabled != true)
+            #expect(settings.smartCardsEnabled != true)
+            #expect(settings.microphoneEnabled != true)
+            #expect(settings.usbDevices == nil)
+            #expect(settings.kerberosKDCProxyURL == nil)
+        }
+        // Explicitly safer choices are kept.
+        let app = try #require(result.inventory.connections.first { $0.name == "APP01" })
+        #expect(app.settings.security == .nla)
+        #expect(app.settings.printersEnabled == false)
+        // The user is told what was left out, per item.
+        #expect(result.removedSettings.count == 2)
+        #expect(result.removedSettings.contains { $0.hasPrefix("DC01:") && $0.contains("shared folder “/”") && $0.contains("Standard RDP Security") })
+        #expect(result.removedSettings.contains { $0.hasPrefix("Shady:") })
+
+        // Resolved through the imported group too: nothing is granted.
+        let store = InventoryStore(persistence: InMemoryInventoryPersistence(result.inventory))
+        let resolved = store.resolvedSettings(for: try #require(result.inventory.connections.first { $0.name == "DC01" }))
+        #expect(resolved.security != .standardRDP)
+        #expect(resolved.sharedFolderPath == nil)
+        #expect(resolved.printersEnabled == false)
+        #expect(resolved.usbDevices.isEmpty)
     }
 
     @Test func rejectsForeignOrInvalidArchives() {
