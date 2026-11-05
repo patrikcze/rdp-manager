@@ -1,6 +1,9 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
-    directory: /
+    # "/" covers .github/workflows; the shared composite actions need their own entry.
+    directories:
+      - /
+      - /.github/actions/*
     schedule:
       interval: monthly
