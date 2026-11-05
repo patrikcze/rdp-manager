@@ -1,7 +1,7 @@
 # Changelog
 
 ## 0.3.1 (unreleased)
-- Fix: clearing the sidebar search could leave a result row drawn over the Library section.
+- Search results show in the main table instead of replacing the sidebar. Swapping the sidebar left stale rows drawn over it, or an empty Connections section, after the search was cleared.
 
 ## 0.3.0 (2026-11-05)
 First published release. It includes everything planned for 0.2.0, which was never released on its own.

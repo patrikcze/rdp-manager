@@ -24,6 +24,10 @@ struct MainWindow: View {
         .onChange(of: model.sidebarSelection) { _, selection in
             showContent(for: selection)
         }
+        // Results are a table in the Overview, so starting a search brings it to the front.
+        .onChange(of: model.searchText.isEmpty) { _, isEmpty in
+            if isEmpty == false { model.workspace.selectedTab = .overview }
+        }
         .onChange(of: model.workspace.isFocusMode) { _, focus in
             withAnimation(.snappy) {
                 columnVisibility = focus ? .detailOnly : .all
