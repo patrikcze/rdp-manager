@@ -42,7 +42,7 @@ The app picks the engine per connection.
 - **Self-contained app:** every library is bundled. `Scripts/make-dmg.sh` builds a distributable DMG, signed and notarized with a Developer ID.
 - **Security:** passwords stay in the Keychain. Certificates are checked before any credential is sent, and changed certificates are flagged. NLA is the default (Standard RDP Security only when you choose it), and there is no telemetry.
 - **Reliability:** bounded automatic reconnect after network drops, never after sign-in or certificate failures. Errors are clear and explain what to do next.
-- **Import and export:** Microsoft `.rdp` files (unsupported settings are reported), plus JSON library export and import without passwords.
+- **Import and export:** Microsoft `.rdp` files in both directions (import reports unsupported settings; Export as .rdp File… writes a connection's effective settings, never its password), plus JSON library export and import without passwords.
 
 ## Quick start
 ```bash

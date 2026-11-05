@@ -168,6 +168,7 @@ struct OverviewView: View {
                     Button(model.inventory.connection(id)?.isFavorite == true ? "Remove from Favorites" : "Add to Favorites") {
                         model.inventory.toggleFavorite(id)
                     }
+                    Button("Export as .rdp File…") { model.exportRDPFile(id) }
                 }
                 Divider()
                 Button("Delete", role: .destructive) {

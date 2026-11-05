@@ -15,6 +15,7 @@ Live tests read credentials only from the environment. Never put them in files.
 | `RDPManagerCoreTests/HostAddressTests` | Quick Connect parsing: host, host:port, IPv4/IPv6, rdp:// prefixes, invalid input |
 | `RDPManagerCoreTests/InventoryStoreTests` | Nested groups, reordering, move-cycle prevention, deleting groups with or without contents, settings inheritance and its sources, credential references, orphaned Keychain accounts, search, persistence (0600 permissions), newer schema refused |
 | `RDPManagerCoreTests/ImportExportTests` | `.rdp` import and warnings, library export without passwords, identifier remapping |
+| `RDPManagerCoreTests/RDPFileExportTests` | `.rdp` export: effective settings, `DOMAIN\user` from profiles, no password or Mac paths, no line injection, safe file names, round trip through the importer |
 | `RDPManagerCoreTests/SessionPolicyTests` | Bounded reconnect, no retry for authentication/certificate/server failures, credential plans |
 | `RDPManagerCoreTests/EngineChoiceTests` | Which engine each feature selects, forced engines and ignored settings, USB ID normalization, old libraries still decode |
 | `RDPEngineIntegrationTests/EngineFailureTests` | Real RDPKit runs against local sockets: refused port, non-RDP service, silent server, wrong password |

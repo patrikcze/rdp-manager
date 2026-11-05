@@ -210,6 +210,7 @@ struct SidebarView: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(connection.addressLabel, forType: .string)
                 }
+                Button("Export as .rdp File…") { model.exportRDPFile(id) }
                 Divider()
                 Button("Delete", role: .destructive) { model.requestDelete(.connection(id)) }
             }

@@ -15,6 +15,7 @@
 - Fix: the main window comes back after restoration or a Dock click when none is open.
 - Fix: the inspector shows the TLS version during a live session.
 - Fix: typing into the remote session is paced, so Windows no longer drops characters.
+- Export as .rdp File… in the sidebar and Overview menus: one connection with its effective settings, readable by Microsoft's clients. No password; the shared folder path, USB devices and Kerberos settings stay out, and the app says so.
 
 ## 0.1.0 (unreleased)
 - First version: a connection library with nested groups and inheritance, Quick Connect, tabbed and detachable RDP sessions on RDPKit 0.7.0, Keychain credentials and shared credential profiles, certificate trust prompts, bounded reconnect, `.rdp` import, JSON library export and import, an inspector with measured session metrics, and an app icon.
