@@ -24,6 +24,11 @@ struct SettingsView: View {
             Section("Keychain") {
                 Button("Remove Unused Passwords") {
                     let inventory = model.inventory
+                    // An unreadable library looks empty: every password would seem unused.
+                    guard inventory.loadFailed == false else {
+                        cleanupResult = "Unavailable while the connection library can't be read."
+                        return
+                    }
                     let credentialIDs = Set(inventory.credentials.map(\.id))
                     let connectionIDs = Set(inventory.connections.map(\.id))
                     Task {
@@ -40,12 +45,13 @@ struct SettingsView: View {
                         }
                     }
                 }
+                .disabled(model.inventory.loadFailed)
                 if let cleanupResult {
                     Text(cleanupResult).font(.caption).foregroundStyle(.secondary)
                 }
             }
             Section("Privacy") {
-                Text("RDP Manager sends no analytics or telemetry and makes no network connections except to the hosts you connect to.")
+                Text("RDP Manager sends no analytics or telemetry. It connects only to the hosts you connect to and, when a connection uses Kerberos, to that domain's Kerberos servers (found through DNS) or the KDC proxy you set.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

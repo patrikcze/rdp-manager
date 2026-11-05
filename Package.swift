@@ -62,6 +62,7 @@ let package = Package(
             dependencies: [
                 "RDPManager",
                 "RDPManagerCore",
+                "FreeRDPBridge",
                 .product(name: "RDPKit", package: "RDPKit"),
             ]
         ),

@@ -101,6 +101,8 @@ final class FreeRDPEngine: SessionEngine {
 
     func setClipboardEnabled(_ enabled: Bool) {
         clipboardEnabled = enabled
+        // The bridge forgets the offered Mac text and refuses later requests when it's off.
+        connection?.setClipboardShared(enabled)
         if enabled {
             pasteboardChangeCount = -1 // offer what is on the pasteboard now
         }
@@ -170,16 +172,19 @@ final class FreeRDPEngine: SessionEngine {
         pasteboardChangeCount = pasteboard.changeCount // not echoed back
     }
 
-    fileprivate func ended(errorName: String, errorInfo: UInt32, errorInfoText: String, from source: FreeRDPConnection) {
+    fileprivate func ended(errorName: String, errorInfo: UInt32, errorInfoText: String, desktopTooLarge: Bool,
+                           from source: FreeRDPConnection) {
         guard source === connection, let request else { return }
         connection = nil
         stopTicking()
         // A refused certificate already reported; the cancel it caused is not an end.
         guard certificateRefused == false else { return }
-        let outcome = FreeRDPEndMapping.outcome(
-            errorName: errorName, errorInfo: errorInfo, errorInfoText: errorInfoText,
-            showedDesktop: showedDesktop, host: request.address.host, security: request.settings.security
-        )
+        let outcome = desktopTooLarge
+            ? FreeRDPEndMapping.desktopTooLarge(host: request.address.host)
+            : FreeRDPEndMapping.outcome(
+                errorName: errorName, errorInfo: errorInfo, errorInfoText: errorInfoText,
+                showedDesktop: showedDesktop, host: request.address.host, security: request.settings.security
+            )
         delegate?.engine(ended: outcome, showedDesktop: showedDesktop)
     }
 
@@ -335,8 +340,8 @@ final class FreeRDPConnection: @unchecked Sendable {
             guard let text else { return }
             FreeRDPConnection.from(context).remoteClipboard(String(cString: text))
         }
-        callbacks.on_ended = { context, lastError, errorInfo in
-            FreeRDPConnection.from(context).sessionEnded(lastError, errorInfo)
+        callbacks.on_ended = { context, lastError, errorInfo, failure in
+            FreeRDPConnection.from(context).sessionEnded(lastError, errorInfo, desktopTooLarge: failure == RM_FAILURE_DESKTOP_TOO_LARGE)
         }
 
         let usb = settings.usbDevices.joined(separator: "#")
@@ -384,6 +389,8 @@ final class FreeRDPConnection: @unchecked Sendable {
             retained.release()
             return false
         }
+        // The channel exists when the settings allow it; the live switch decides what flows.
+        rm_session_set_clipboard_shared(session, settings.clipboardEnabled && request.clipboardEnabled)
         // In automatic mode Standard RDP Security is never offered: it must be chosen.
         lock.withLock { self.session = session }
         // Handed to the session thread, which alone frees it after the run returns.
@@ -471,6 +478,14 @@ final class FreeRDPConnection: @unchecked Sendable {
         withSession { session in text.withCString { rm_session_set_local_clipboard_text(session, $0) } }
     }
 
+    /// Unlike input, also before the desktop shows: the switch must hold from the start.
+    func setClipboardShared(_ shared: Bool) {
+        lock.withLock {
+            guard let session else { return }
+            rm_session_set_clipboard_shared(session, shared)
+        }
+    }
+
     // MARK: - Callbacks (session thread)
 
     private static func from(_ context: UnsafeMutableRawPointer?) -> FreeRDPConnection {
@@ -491,11 +506,13 @@ final class FreeRDPConnection: @unchecked Sendable {
 
     private func frame(_ source: UnsafePointer<UInt8>?, _ width: Int, _ height: Int, _ stride: Int,
                        _ x: Int, _ y: Int, _ w: Int, _ h: Int) {
-        guard let source, width > 0, height > 0 else { return }
+        // The bridge bounds the size before FreeRDP allocates; this keeps the copy bounded even
+        // if that ever changes.
+        guard let source, let byteCount = Self.frameByteCount(width: width, height: height), stride >= width * 4 else { return }
         let schedule: Bool = lock.withLock {
             if width != pixelWidth || height != pixelHeight || pixels == nil {
                 pixels?.deallocate()
-                pixels = UnsafeMutableRawPointer.allocate(byteCount: width * height * 4, alignment: 16)
+                pixels = UnsafeMutableRawPointer.allocate(byteCount: byteCount, alignment: 16)
                 pixelWidth = width
                 pixelHeight = height
                 copy(from: source, stride: stride, x: 0, y: 0, w: width, h: height)
@@ -517,6 +534,14 @@ final class FreeRDPConnection: @unchecked Sendable {
         }
     }
 
+    /// BGRA bytes for a frame of this size, or nil when the size is outside the bridge's limits.
+    static func frameByteCount(width: Int, height: Int) -> Int? {
+        guard width > 0, height > 0, width <= Int(RM_MAX_DESKTOP_SIDE), height <= Int(RM_MAX_DESKTOP_SIDE) else { return nil }
+        let (pixels, overflow) = width.multipliedReportingOverflow(by: height)
+        guard overflow == false, pixels <= Int(RM_MAX_DESKTOP_PIXELS) else { return nil }
+        return pixels * 4
+    }
+
     /// Under `lock`.
     private func copy(from source: UnsafePointer<UInt8>, stride: Int, x: Int, y: Int, w: Int, h: Int) {
         guard let pixels, w > 0, h > 0 else { return }
@@ -529,12 +554,13 @@ final class FreeRDPConnection: @unchecked Sendable {
     private func makeImage() -> CGImage? {
         lock.withLock {
             displayScheduled = false
-            guard let pixels else { return nil }
-            let data = CFDataCreate(nil, pixels.assumingMemoryBound(to: UInt8.self), pixelWidth * pixelHeight * 4)!
-            guard let provider = CGDataProvider(data: data) else { return nil }
+            guard let pixels, let byteCount = Self.frameByteCount(width: pixelWidth, height: pixelHeight),
+                  let data = CFDataCreate(nil, pixels.assumingMemoryBound(to: UInt8.self), byteCount),
+                  let provider = CGDataProvider(data: data),
+                  let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
             return CGImage(
                 width: pixelWidth, height: pixelHeight, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: pixelWidth * 4,
-                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                space: space,
                 // BGRA in memory, alpha ignored: the desktop is opaque.
                 bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
                 provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent
@@ -589,7 +615,7 @@ final class FreeRDPConnection: @unchecked Sendable {
             systemTrusted = SecTrustEvaluateWithError(trust, nil)
         }
         let info = RDPServerCertificateInfo(trusted: systemTrusted, sha256: sha256, warnings: [], host: host)
-        let refusal = trustStore.trusted.refusal(of: info, port: port, acceptsUntrusted: false)
+        let refusal = trustStore.refusal(of: info, port: port)
         deliver { engine, source in
             engine.certificate(sha256: sha256, trustedBySystem: systemTrusted, refusal: refusal, host: host, from: source)
         }
@@ -615,7 +641,7 @@ final class FreeRDPConnection: @unchecked Sendable {
         return result
     }
 
-    private func sessionEnded(_ lastError: UInt32, _ errorInfo: UInt32) {
+    private func sessionEnded(_ lastError: UInt32, _ errorInfo: UInt32, desktopTooLarge: Bool) {
         let name = String(cString: rm_error_name(lastError))
         let infoText = String(cString: rm_error_info_string(errorInfo))
         let waiters: [CheckedContinuation<Void, Never>] = lock.withLock {
@@ -626,7 +652,7 @@ final class FreeRDPConnection: @unchecked Sendable {
         }
         waiters.forEach { $0.resume() }
         deliver { engine, source in
-            engine.ended(errorName: name, errorInfo: errorInfo, errorInfoText: infoText, from: source)
+            engine.ended(errorName: name, errorInfo: errorInfo, errorInfoText: infoText, desktopTooLarge: desktopTooLarge, from: source)
         }
     }
 }

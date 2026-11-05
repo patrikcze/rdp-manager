@@ -1,3 +1,4 @@
+import FreeRDPBridge
 import Foundation
 import RDPManagerCore
 
@@ -16,6 +17,14 @@ enum FreeRDPEndMapping {
         static let freshCredentialsRequired: UInt32 = 0x0A
         static let disconnectedByUser: UInt32 = 0x0B
         static let logoffByUser: UInt32 = 0x0C
+    }
+
+    /// The server chose a desktop or graphics surface larger than the bridge allows.
+    static func desktopTooLarge(host: String) -> EngineEnd {
+        .end(SessionEnd(
+            kind: .failed, category: .server, title: "Desktop too large",
+            message: "\(host) asked for a desktop larger than \(RDPDesktopLimits.maxSide) pixels a side or \(RDPDesktopLimits.maxPixels / 1_000_000) million pixels, so the connection was closed."
+        ))
     }
 
     static func outcome(
@@ -109,4 +118,10 @@ enum FreeRDPEndMapping {
         }
         return failed(.client, "Connection failed", errorInfo != 0 ? errorInfoText : errorName)
     }
+}
+
+/// The bridge's limits on server-chosen desktop and surface sizes.
+enum RDPDesktopLimits {
+    static let maxSide = Int(RM_MAX_DESKTOP_SIDE)
+    static let maxPixels = Int(RM_MAX_DESKTOP_PIXELS)
 }
