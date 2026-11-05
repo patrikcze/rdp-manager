@@ -37,6 +37,10 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        // Search swaps every section for the results. Patching the sidebar's outline view in
+        // place left stale rows drawn over the new ones, so each mode gets its own list.
+        // Selection and folder expansion live in the model and survive the rebuild.
+        .id(model.searchText.isEmpty)
         .contextMenu(forSelectionType: SidebarSelection.self) { selection in
             if let item = selection.first {
                 menu(for: item)
