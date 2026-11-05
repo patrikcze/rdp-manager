@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.3.0 (2026-11-05)
+First published release. It includes everything planned for 0.2.0, which was never released on its own.
+
+- GitHub Actions: CI runs a secrets scan, script and workflow checks, then builds, tests and packages the DMG on every PR. Pushing a `v*` tag publishes the DMG and its SHA-256 on GitHub Releases, Developer ID signed and notarized when the signing secrets are set.
+- The app version comes from git tags (`Scripts/version.sh`); the About panel shows the full version, including pre-release and dev suffixes. `Scripts/tag-release.sh` tags a release after checking `master` and the CHANGELOG.
 - Security fixes from the 2026-11-04 review:
   - FreeRDP: clipboard and display calls hold the bridge lock, so a server disconnect can't free a channel mid-call.
   - FreeRDP: server-chosen desktop and graphics surface sizes are capped (8192 a side, 8192 × 4608 pixels); a larger desktop ends the session as "Desktop too large", a larger surface is refused. No force-unwrapped frame allocation.
@@ -28,5 +32,5 @@
 - Fix: typing into the remote session is paced, so Windows no longer drops characters.
 - Export as .rdp File… in the sidebar and Overview menus: one connection with its effective settings, readable by Microsoft's clients. No password; the shared folder path, USB devices and Kerberos settings stay out, and the app says so.
 
-## 0.1.0 (unreleased)
+## 0.1.0 (not released)
 - First version: a connection library with nested groups and inheritance, Quick Connect, tabbed and detachable RDP sessions on RDPKit 0.7.0, Keychain credentials and shared credential profiles, certificate trust prompts, bounded reconnect, `.rdp` import, JSON library export and import, an inspector with measured session metrics, and an app icon.

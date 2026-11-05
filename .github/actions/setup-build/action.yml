@@ -1,0 +1,64 @@
+name: Set up the macOS build
+description: Selects Xcode, installs the Homebrew dependencies and provides FreeRDP in ThirdParty/ (from the cache, or built with Scripts/build-freerdp.sh).
+inputs:
+  xcode-version:
+    description: Xcode to select, e.g. "26.1"; "latest" picks the newest installed release.
+    default: latest
+runs:
+  using: composite
+  steps:
+    # A plain xcode-select instead of a third-party action: release jobs hold signing secrets.
+    - name: Select Xcode
+      shell: bash
+      env:
+        WANTED: ${{ inputs.xcode-version }}
+      run: |
+        if [[ "$WANTED" == "latest" ]]; then
+          app="$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -viE 'beta|rc' | sort -V | tail -1)"
+          [[ -n "$app" ]] || app=/Applications/Xcode.app
+        elif [[ "$WANTED" =~ ^[0-9][0-9.]*$ ]]; then
+          app="/Applications/Xcode_$WANTED.app"
+        else
+          echo "::error::xcode-version must be 'latest' or a version number"; exit 1
+        fi
+        [[ -d "$app" ]] || { echo "::error::$app is not installed"; ls -d /Applications/Xcode*.app; exit 1; }
+        sudo xcode-select -s "$app/Contents/Developer"
+        xcodebuild -version
+
+    - name: Install Homebrew dependencies
+      shell: bash
+      env:
+        HOMEBREW_NO_AUTO_UPDATE: "1"
+        HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      run: brew install cmake ninja pkgconf openssl@3 krb5 libusb cjson
+
+    - name: FreeRDP cache key
+      id: key
+      shell: bash
+      # The libraries link against these exact Homebrew and Xcode versions.
+      run: |
+        {
+          cat Scripts/build-freerdp.sh
+          cat Scripts/freerdp-patches/*.patch 2>/dev/null || true
+          brew list --versions openssl@3 krb5 libusb cjson
+          xcodebuild -version
+          uname -m
+        } | shasum -a 256 | cut -c1-20 > /tmp/freerdp-key
+        echo "hash=$(cat /tmp/freerdp-key)" >> "$GITHUB_OUTPUT"
+
+    - name: Restore FreeRDP
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ThirdParty/freerdp
+          ThirdParty/FreeRDP-src
+        key: freerdp-${{ runner.os }}-${{ steps.key.outputs.hash }}
+
+    - name: Build FreeRDP
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        rm -rf ThirdParty/freerdp ThirdParty/FreeRDP-src ThirdParty/FreeRDP-build
+        Scripts/build-freerdp.sh > /tmp/build-freerdp.log 2>&1 || { tail -100 /tmp/build-freerdp.log; exit 1; }
+        tail -3 /tmp/build-freerdp.log

@@ -1,0 +1,141 @@
+name: Release
+
+# Pushing a tag vMAJOR.MINOR.PATCH (or vMAJOR.MINOR.PATCH-suffix for a pre-release) builds,
+# tests and publishes RDP-Manager-<version>.dmg with its SHA-256 on GitHub Releases. Create
+# the tag with Scripts/tag-release.sh. See RELEASING.md.
+#
+# Optional repository secrets for a Developer ID signed and notarized DMG (without them the
+# DMG is ad-hoc signed and the release says so):
+#   MACOS_CERTIFICATE_P12        base64 of the "Developer ID Application" certificate + key (.p12)
+#   MACOS_CERTIFICATE_PASSWORD   its export password
+#   MACOS_SIGN_IDENTITY          e.g. "Developer ID Application: Name (TEAMID)"
+#   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   for notarytool (app-specific password)
+
+on:
+  push:
+    tags: ["v[0-9]*"]
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create the release
+
+jobs:
+  release:
+    runs-on: ${{ vars.MACOS_RUNNER || 'macos-26' }}
+    timeout-minutes: 90
+    env:
+      TAG: ${{ github.ref_name }}
+      SIGNED: ${{ secrets.MACOS_CERTIFICATE_P12 != '' && secrets.MACOS_SIGN_IDENTITY != '' }}
+      NOTARIZED: ${{ secrets.MACOS_CERTIFICATE_P12 != '' && secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_PASSWORD != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the tag
+        id: tag
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::$TAG is not vMAJOR.MINOR.PATCH[-suffix]"; exit 1
+          fi
+          VERSION="${TAG#v}"
+          git fetch --quiet origin master
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/master; then
+            echo "::error::$TAG is not on master"; exit 1
+          fi
+          Scripts/release-notes.sh "$VERSION" > "$RUNNER_TEMP/notes.md"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          [[ "$VERSION" == *-* ]] && echo "prerelease=true" >> "$GITHUB_OUTPUT" || echo "prerelease=false" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup-build
+        with:
+          xcode-version: ${{ vars.XCODE_VERSION || 'latest' }}
+
+      - name: Test
+        run: swift test
+
+      - name: Import the signing certificate
+        if: env.SIGNED == 'true'
+        env:
+          P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          existing=()
+          while IFS= read -r line; do existing+=("$(echo "$line" | tr -d '" ')"); done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$KEYCHAIN" "${existing[@]}"
+          if [[ "$NOTARIZED" == "true" ]]; then
+            xcrun notarytool store-credentials rdpm-notary --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PASSWORD" --keychain "$KEYCHAIN"
+          fi
+          echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+
+      - name: Build the DMG
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+          SIGN_IDENTITY_SECRET: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          export DMG="build/RDP-Manager-$VERSION.dmg"
+          if [[ "$SIGNED" == "true" ]]; then
+            export SIGN_IDENTITY="$SIGN_IDENTITY_SECRET"
+            [[ "$NOTARIZED" == "true" ]] && export NOTARY_PROFILE=rdpm-notary
+          fi
+          Scripts/make-dmg.sh
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
+
+      - name: Check the build matches the tag
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          PLIST="build/RDP Manager.app/Contents/Info.plist"
+          short="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
+          full="$(/usr/libexec/PlistBuddy -c 'Print :RDPManagerVersion' "$PLIST")"
+          [[ "$full" == "$VERSION" && "$short" == "${VERSION%%-*}" ]] || { echo "::error::app says $short / $full, tag says $VERSION"; exit 1; }
+          codesign --verify --strict --deep "build/RDP Manager.app"
+          if [[ "$NOTARIZED" == "true" ]]; then
+            xcrun stapler validate "$DMG"
+            spctl --assess --type open --context context:primary-signature -v "$DMG"
+          fi
+          (cd build && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
+          cat "$DMG.sha256"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.tag.outputs.version }}
+          PRERELEASE: ${{ steps.tag.outputs.prerelease }}
+        run: |
+          NOTES="$RUNNER_TEMP/notes.md"
+          {
+            echo
+            echo "---"
+            echo "Requires macOS 15 or later on Apple Silicon. Verify the download with \`shasum -a 256 -c $(basename "$DMG").sha256\`."
+            if [[ "$NOTARIZED" != "true" ]]; then
+              echo
+              echo "**This DMG is not notarized by Apple.** macOS blocks it on first launch: open it once, then choose System Settings › Privacy & Security › Open Anyway."
+            fi
+          } >> "$NOTES"
+          flags=()
+          [[ "$PRERELEASE" == "true" ]] && flags+=(--prerelease)
+          gh release create "$TAG" "$DMG" "$DMG.sha256" --verify-tag \
+            --title "RDP Manager $VERSION" --notes-file "$NOTES" "${flags[@]}"
+
+      - name: Remove the signing keychain
+        if: always() && env.KEYCHAIN != ''
+        run: security delete-keychain "$KEYCHAIN" || true

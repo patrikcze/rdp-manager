@@ -46,7 +46,9 @@ struct ColorLabelPicker: View {
     let apply: @MainActor @Sendable (TagColor?) -> Void
 
     var body: some View {
-        Picker("Color", selection: Binding(get: { current }, set: apply)) {
+        // A closure literal, not `set: apply`: converting the @MainActor function value to
+        // Binding's setter crashes Swift 6.3's IRGen (Xcode 26.x, as on the CI runners).
+        Picker("Color", selection: Binding(get: { current }, set: { apply($0) })) {
             Text("None").tag(TagColor?.none)
             Divider()
             ForEach(TagColor.allCases, id: \.self) { color in

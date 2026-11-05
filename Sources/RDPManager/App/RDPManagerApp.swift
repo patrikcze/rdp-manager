@@ -84,6 +84,18 @@ struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About RDP Manager") {
+                // The full version from the release tag, e.g. 0.3.0-beta.1 or a dev build's
+                // 0.3.0-dev.4+g1a2b3c4, which CFBundleShortVersionString can't hold.
+                let info = Bundle.main.infoDictionary ?? [:]
+                var options: [NSApplication.AboutPanelOptionKey: Any] = [:]
+                if let version = info["RDPManagerVersion"] as? String {
+                    options[.applicationVersion] = version
+                }
+                NSApp.orderFrontStandardAboutPanel(options: options)
+            }
+        }
         CommandGroup(replacing: .newItem) {
             Button("New Connection…") { model.newConnection() }
                 .keyboardShortcut("n")
