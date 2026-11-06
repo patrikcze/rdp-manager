@@ -5,13 +5,20 @@ import Security
 public enum SecretAccount: Hashable, Sendable {
     /// A shared `CredentialProfile`'s password.
     case credential(UUID)
-    /// The password of a connection's own (`.direct`) identity.
+    /// The password of an RDP connection's own (`.direct`) identity.
     case connection(UUID)
+    /// The password of an SSH connection's own identity. A namespace of its own, so an RDP
+    /// password saved for a connection never becomes its SSH password, or the reverse.
+    case sshPassword(UUID)
+    /// The passphrase of an SSH key credential profile's private key.
+    case sshKeyPassphrase(UUID)
 
     public var rawValue: String {
         switch self {
         case let .credential(id): "credential:\(id.uuidString)"
         case let .connection(id): "connection:\(id.uuidString)"
+        case let .sshPassword(id): "ssh-password:\(id.uuidString)"
+        case let .sshKeyPassphrase(id): "ssh-key-passphrase:\(id.uuidString)"
         }
     }
 
@@ -23,6 +30,8 @@ public enum SecretAccount: Hashable, Sendable {
         switch parts[0] {
         case "credential": self = .credential(id)
         case "connection": self = .connection(id)
+        case "ssh-password": self = .sshPassword(id)
+        case "ssh-key-passphrase": self = .sshKeyPassphrase(id)
         default: return nil
         }
     }

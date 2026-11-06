@@ -189,3 +189,43 @@ public enum CredentialPlan: Equatable, Sendable {
         }
     }
 }
+
+/// A session's state as the shared UI shows it (status dots, tab tooltips, tables), whatever
+/// its protocol. Derived from real session state only.
+public struct SessionStatus: Equatable, Sendable {
+    public enum Tone: Equatable, Sendable {
+        case idle
+        /// Connecting, verifying, authenticating, reconnecting.
+        case inProgress
+        /// Waiting for the user: sign-in, certificate or host key.
+        case needsUser
+        /// The desktop or terminal is live.
+        case connected
+        case failed
+        case ended
+    }
+
+    public var tone: Tone
+    public var label: String
+
+    public init(tone: Tone, label: String) {
+        self.tone = tone
+        self.label = label
+    }
+
+    public var isActive: Bool { tone == .connected }
+    public var isInProgress: Bool { tone == .inProgress }
+}
+
+extension SessionPhase {
+    public var status: SessionStatus {
+        let tone: SessionStatus.Tone = switch self {
+        case .idle: .idle
+        case .resolvingCredentials, .connecting, .reconnecting: .inProgress
+        case .awaitingCredentials, .awaitingCertificateDecision: .needsUser
+        case .connected: .connected
+        case let .ended(end): end.kind == .failed ? .failed : .ended
+        }
+        return SessionStatus(tone: tone, label: shortLabel)
+    }
+}
