@@ -360,7 +360,7 @@ extension SSHSession: SSHTransportDelegate {
             saveTypedSecret(acceptedBy: method)
             // Through a proxy the log is quieter (see SSHTarget.usesProxy): signing in is the
             // last thing it reports before the shell.
-            if target.usesProxy || target.settings.proxyJump != nil { markConnected() }
+            if target.isProxied { markConnected() }
         case .interactiveSession:
             markConnected()
         default:

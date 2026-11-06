@@ -20,6 +20,12 @@ public struct SSHTarget: Equatable, Sendable {
     /// counts as live once authentication succeeds).
     public var usesProxy = false
 
+    /// Through a jump host or proxy, by the app's settings or `~/.ssh/config`. `ProxyJump none`
+    /// is a direct connection.
+    public var isProxied: Bool {
+        usesProxy || settings.proxyJump.map { $0 != "none" } == true
+    }
+
     public init(host: String, port: UInt16 = 22, username: String = "", settings: ResolvedSSHSettings = .builtIn, profileKeyPath: String? = nil) {
         self.host = host
         self.port = port
@@ -117,7 +123,7 @@ public enum SSHCommandBuilder {
             options.append(("UserKnownHostsFile", try quotedPath(knownHosts, field: "known_hosts file")))
         }
         if let knownHosts = target.userKnownHostsFile, knownHosts.isEmpty { throw .invalid(field: "known_hosts file", value: knownHosts) }
-        var arguments = target.usesProxy || settings.proxyJump.map({ $0 != "none" }) == true
+        var arguments = target.isProxied
             ? ["-o", "LogLevel=VERBOSE", "-E", logPath]
             : ["-v", "-E", logPath]
         if let configFile = target.configFile {
