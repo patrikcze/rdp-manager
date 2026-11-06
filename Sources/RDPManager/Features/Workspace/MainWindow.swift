@@ -138,7 +138,7 @@ struct MainWindow: View {
         }
     }
 
-    /// `-Show inspector|editor|group|credentials` puts the window in a state for README
+    /// `-Show inspector|editor|group|credentials|ssh-inspector|ssh-editor` puts the window in a state for README
     /// screenshots (with `-SampleLibraryInMemory`). Debug builds only.
     private func showForScreenshot(_ scene: String) {
         let inventory = model.inventory
@@ -153,6 +153,11 @@ struct MainWindow: View {
             model.editingFolder = inventory.subfolders(of: nil).first
         case "credentials":
             model.sidebarSelection = .credentials
+        case "ssh-inspector":
+            if let ssh = inventory.connections.first(where: \.isSSH) { model.sidebarSelection = .connection(ssh.id) }
+            model.isInspectorPresented = true
+        case "ssh-editor":
+            if let ssh = inventory.connections.first(where: \.isSSH) { model.edit(ssh.id) }
         default:
             break
         }

@@ -234,3 +234,34 @@ public enum SSHCommandBuilder {
         return environment
     }
 }
+
+/// A key's type and fingerprint, as `ssh-keygen -l -E sha256` prints them:
+/// `256 SHA256:abc… comment (ED25519)`.
+public struct SSHKeyDescription: Equatable, Sendable {
+    public var type: String
+    public var bits: Int?
+    public var fingerprint: String
+
+    public init(type: String, bits: Int?, fingerprint: String) {
+        self.type = type
+        self.bits = bits
+        self.fingerprint = fingerprint
+    }
+
+    public static func parse(_ output: String) -> SSHKeyDescription? {
+        guard let line = output.split(whereSeparator: \.isNewline).first else { return nil }
+        let parts = line.split(separator: " ")
+        guard parts.count >= 2, parts[1].hasPrefix("SHA256:"),
+              let last = parts.last, last.hasPrefix("("), last.hasSuffix(")")
+        else { return nil }
+        return SSHKeyDescription(type: String(last.dropFirst().dropLast()), bits: Int(parts[0]), fingerprint: String(parts[1]))
+    }
+
+    /// "ED25519" or "RSA 3072".
+    public var label: String {
+        switch (type, bits) {
+        case ("ED25519", _), ("ED25519-SK", _), (_, nil): type
+        case let (_, bits?): "\(type) \(bits)"
+        }
+    }
+}

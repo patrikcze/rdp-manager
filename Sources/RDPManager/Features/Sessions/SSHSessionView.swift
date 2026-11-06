@@ -12,8 +12,10 @@ struct SSHSessionView: View {
 
     var body: some View {
         ZStack {
-            Color(nsColor: .textBackgroundColor)
+            Color(nsColor: session.terminal.nativeBackgroundColor)
             SurfaceHost(surface: session.surface)
+                .padding(.leading, 6)
+                .padding(.top, 4)
             switch session.phase {
             case let .awaitingHostKeyDecision(prompt):
                 cardBackdrop { SSHHostKeyCard(session: session, prompt: prompt) }

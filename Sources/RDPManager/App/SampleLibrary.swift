@@ -22,6 +22,16 @@ enum SampleLibrary {
             ))
         }
 
+        func sshHost(_ name: String, _ address: String, in parent: Folder, os: String, user: String, tags: [String] = [], favorite: Bool = false) {
+            var connection = Connection(
+                name: name, protocol: .ssh, host: address, folderID: parent.id,
+                sortIndex: connections.count(where: { $0.folderID == parent.id }),
+                tags: tags, isFavorite: favorite, operatingSystemLabel: os
+            )
+            connection.ssh.username = user
+            connections.append(connection)
+        }
+
         let emeaAdmin = CredentialProfile(name: "EMEA Admin", username: "admin", domain: "EMEA")
         let namAdmin = CredentialProfile(name: "NAM Operations", username: "ops", domain: "NAM")
         let emea = folder("EMEA", color: .blue)
@@ -31,6 +41,8 @@ enum SampleLibrary {
         host("DC01", "dc01.emea.example.com", in: ws2025, os: "Windows Server 2025", tags: ["domain-controller"], favorite: true, color: .red)
         host("APP01", "app01.emea.example.com", in: ws2025, os: "Windows Server 2025", tags: ["app"])
         host("SQL01", "sql01.emea.example.com", in: ws2025, os: "Windows Server 2025", tags: ["sql"], color: .orange)
+        sshHost("rocky10", "rocky10.emea.example.com", in: emeaDC, os: "Rocky Linux 10", user: "ops", tags: ["linux"], favorite: true)
+        sshHost("bastion", "bastion.emea.example.com", in: emeaDC, os: "Debian 13", user: "ops", tags: ["jump"])
         let ws2022 = folder("Windows Server 2022", in: emeaDC)
         host("FS01", "fs01.emea.example.com", in: ws2022, os: "Windows Server 2022", tags: ["file"])
         let emeaAzure = folder("Azure", in: emea)
@@ -53,7 +65,7 @@ enum SampleLibrary {
         // "host:port" in the sample is split here, as Quick Connect would.
         connections = connections.map { connection in
             var connection = connection
-            if let address = try? HostAddress.parse(connection.host) {
+            if let address = try? HostAddress.parse(connection.host, defaultPort: connection.connectionProtocol.defaultPort) {
                 connection.host = address.host
                 connection.port = address.port
             }

@@ -121,13 +121,15 @@ struct HostIcon: View {
     var connectionProtocol: ConnectionProtocol = .rdp
 
     var body: some View {
-        let fill = color?.color ?? .accentColor
+        // SSH hosts default to a graphite badge with a terminal glyph, so the two protocols
+        // tell apart at a glance even without a color label.
+        let fill = color?.color ?? (connectionProtocol == .ssh ? Color(white: 0.28) : .accentColor)
         RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
             .fill(fill.gradient)
             .frame(width: size + 3, height: size + 3)
             .overlay {
-                Image(systemName: connectionProtocol == .ssh ? "apple.terminal" : "desktopcomputer")
-                    .font(.system(size: size * (connectionProtocol == .ssh ? 0.58 : 0.62), weight: .semibold))
+                Image(systemName: connectionProtocol == .ssh ? "chevron.left.forwardslash.chevron.right" : "desktopcomputer")
+                    .font(.system(size: size * (connectionProtocol == .ssh ? 0.5 : 0.62), weight: .bold))
                     .foregroundStyle(.white)
             }
             .overlay {

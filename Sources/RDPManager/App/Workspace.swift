@@ -132,9 +132,18 @@ final class Workspace {
 
     /// An SSH session to a typed address. Nothing is saved, passwords included.
     func quickConnectSSH(username: String, address: HostAddress) {
+        var target = SSHTarget(host: address.host, port: address.port, username: username)
+        #if DEBUG
+        // Debug builds only: RDPM_SSH_CONFIG and RDPM_SSH_KNOWN_HOSTS point a Quick Connect
+        // at a throwaway sshd without reading or changing ~/.ssh (UI checks, see TESTING.md).
+        let environment = ProcessInfo.processInfo.environment
+        target.configFile = environment["RDPM_SSH_CONFIG"]
+        target.userKnownHostsFile = environment["RDPM_SSH_KNOWN_HOSTS"]
+        if let key = environment["RDPM_SSH_KEY"] { target.settings.identityFile = key }
+        #endif
         let session = SSHSession(
             connectionID: nil, title: address.host,
-            target: SSHTarget(host: address.host, port: address.port, username: username),
+            target: target,
             passwordAccount: nil, passphraseAccount: nil,
             credentials: credentials, preferences: terminalPreferences
         )
