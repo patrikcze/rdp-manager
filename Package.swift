@@ -12,11 +12,15 @@ let package = Package(
     ],
     products: [
         .executable(name: "RDPManager", targets: ["RDPManager"]),
+        .executable(name: "RDPManagerAskpass", targets: ["RDPManagerAskpass"]),
     ],
     dependencies: [
         // Pinned exactly: the RDP engine is security-critical and its API still moves
         // between minor versions. See RDP-BACKEND-DECISION.md before bumping.
         .package(url: "https://github.com/steelbrain/RDPKit.git", exact: "0.7.0"),
+        // The terminal emulator of SSH sessions (MIT). Pinned exactly: it parses everything a
+        // server sends. See docs/SSH-IMPLEMENTATION-PLAN.md before bumping.
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.99.2"),
     ],
     targets: [
         // Models, persistence, credentials, parsing and session policy. No RDP engine, no UI.
@@ -41,7 +45,8 @@ let package = Package(
                               "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
             ]
         ),
-        // The macOS app: SwiftUI shell, AppKit session views and the RDPKit and FreeRDP backends.
+        // The macOS app: SwiftUI shell, AppKit session views, the RDPKit and FreeRDP backends
+        // and the SSH terminal (system OpenSSH on a PTY, rendered by SwiftTerm).
         .executableTarget(
             name: "RDPManager",
             dependencies: [
@@ -49,7 +54,14 @@ let package = Package(
                 "FreeRDPBridge",
                 .product(name: "RDPKit", package: "RDPKit"),
                 .product(name: "RDPKitAppKit", package: "RDPKit"),
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        // OpenSSH's askpass helper: relays a prompt to the app over the session's socket and
+        // prints the answer. Bundled next to the app's executable.
+        .executableTarget(
+            name: "RDPManagerAskpass",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
@@ -62,6 +74,7 @@ let package = Package(
             dependencies: [
                 "RDPManager",
                 "RDPManagerCore",
+                "RDPManagerAskpass",
                 "FreeRDPBridge",
                 .product(name: "RDPKit", package: "RDPKit"),
             ]

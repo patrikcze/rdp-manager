@@ -29,16 +29,11 @@ struct SettingsView: View {
                         cleanupResult = "Unavailable while the connection library can't be read."
                         return
                     }
-                    let credentialIDs = Set(inventory.credentials.map(\.id))
-                    let connectionIDs = Set(inventory.connections.map(\.id))
+                    // RDP and SSH references alike: passwords, SSH passwords, key passphrases.
+                    let isReferenced = InventoryStore.referencedSecretAccounts(in: inventory.inventory)
                     Task {
                         do {
-                            let removed = try await model.credentials.removeOrphans { account in
-                                switch account {
-                                case let .credential(id): credentialIDs.contains(id)
-                                case let .connection(id): connectionIDs.contains(id)
-                                }
-                            }
+                            let removed = try await model.credentials.removeOrphans(keeping: isReferenced)
                             cleanupResult = removed == 0 ? "Nothing to remove." : "Removed \(removed) unused password\(removed == 1 ? "" : "s")."
                         } catch {
                             cleanupResult = error.localizedDescription
