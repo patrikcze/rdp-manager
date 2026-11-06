@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Native macOS RDP manager. Swift 6 (language mode 6), SwiftUI + AppKit, two engines: RDPKit 0.7.0 (Swift) and FreeRDP 3.32.2 (C, through `Sources/FreeRDPBridge`). SwiftPM only, with no .xcodeproj.
+Native macOS RDP and SSH manager. Swift 6 (language mode 6), SwiftUI + AppKit, two RDP engines: RDPKit 0.7.0 (Swift) and FreeRDP 3.32.2 (C, through `Sources/FreeRDPBridge`); SSH runs `/usr/bin/ssh` on a PTY rendered by SwiftTerm 1.99.2. SwiftPM only, with no .xcodeproj.
 
 ## Commands
 - `Scripts/build-freerdp.sh` must have run once (creates `ThirdParty/freerdp`; needs Homebrew `openssl@3 krb5 libusb cjson cmake ninja pkgconf`).
@@ -17,6 +17,8 @@ Native macOS RDP manager. Swift 6 (language mode 6), SwiftUI + AppKit, two engin
 - `Sources/RDPManagerCore`: models, inventory store, persistence, Keychain, import/export, session policy. No UI or RDPKit imports here. Put testable logic here.
 - `Sources/RDPManager/Backend`: the only code that touches an engine. `RemoteSession` is engine-neutral, and engines implement `SessionEngine`. `SessionEndMapping` (RDPKit) and `FreeRDPEndMapping` (FreeRDP) are the only places that interpret engine failures. `EngineChoice` in core decides which engine runs.
 - `Sources/FreeRDPBridge`: the C API over FreeRDP. Keep FreeRDP types out of Swift.
+- `Sources/RDPManager/Backend/SSH`: SSH sessions. `SSHTransport` is the only seam (one implementation, OpenSSH). `SSHEndMapping` and `SSHPromptClassifier`/`SSHSecretPolicy` (core) are the only places that interpret ssh's end and its prompts. `Workspace.sessions` is `[WorkspaceSession]` (RDP or SSH).
+- `Sources/RDPManagerAskpass`: the askpass helper. It only relays; never give it logic or Keychain access.
 - `Sources/RDPManager/Features/*`: SwiftUI views, one folder per feature.
 - Tests use Swift Testing (`import Testing`). Engine tests use `@testable import RDPManager`.
 
@@ -31,4 +33,7 @@ Native macOS RDP manager. Swift 6 (language mode 6), SwiftUI + AppKit, two engin
 - `InventoryStore.mutate` edits a copy, so closures may read the store. Keep it that way, because the exclusivity crash is easy to reintroduce.
 - Keep RDPKit pinned with `exact:`. Read its CHANGELOG for breaking changes before bumping.
 - Update KNOWN-LIMITATIONS.md and TESTING.md when you change what works or what was verified. Don't mark anything PASS without evidence.
+- SSH: start ssh only by exact path with an argument array, never through a shell; validate every value through `SSHCommandBuilder`. Never put secrets in arguments or the environment, never use `StrictHostKeyChecking=no`/`accept-new` or `UserKnownHostsFile=/dev/null`, never accept a host key without the user, never answer a prompt from the Keychain except through `SSHSecretPolicy`. Agent forwarding and Kerberos delegation stay off by default. Imports never bring startup commands, agent forwarding, delegation or SendEnv. Remote output never acts on the Mac without the user (OSC 52 off by default, links only on click).
+- SSH tests run against a throwaway local sshd (`SSHLocalServerTests`) with `-F` and a temporary known_hosts; never touch `~/.ssh` in tests.
+- Keep SwiftTerm pinned with `exact:`.
 - Commit style: imperative subject, with body explaining why.

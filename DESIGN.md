@@ -3,7 +3,7 @@
 ## Principles
 - **Native first.** SwiftUI with AppKit where it matters, system materials, semantic colors, SF Symbols and SF Pro. Light and dark come from the system. Reduce Motion disables the pulsing status dot.
 - **The desktop is the content.** A session fills the area under the tab strip edge to edge, with no margins. The inspector is optional and closed by default. Focus mode (⇧⌘F) hides the sidebar, tabs and inspector, and full screen (⌃⌘F) removes the rest.
-- **Truthful state.** Green means the remote desktop is showing. Orange means connecting or reconnecting, yellow means waiting for you (sign-in or certificate), red means failed. There is no "online" indicator, because reachability is never probed.
+- **Truthful state.** Green means the remote desktop or the SSH shell is live (OpenSSH said so, not just "the process started"). Orange means connecting or reconnecting, yellow means waiting for you (sign-in or certificate), red means failed. There is no "online" indicator, because reachability is never probed.
 - **Keyboard-first.** ⌘K Quick Connect, ⌘N new connection, ⇧⌘N new group, Return to connect the selection, ⌫ to delete, ⌘0 Overview, ⌘1…⌘9 sessions, ⇧⌘[ ⇧⌘] cycle tabs, ⌥⌘R reconnect, ⌥⌘D disconnect, ⌥⌘I inspector.
 
 ## Layout
@@ -27,6 +27,12 @@
 - **Overview.** The table layout from the reference screenshot, made quieter: name with host icon and color label, live status, monospaced address, group path, the effective "Sign in as" identity (resolved through inheritance), OS label and last connected. It has a column sort, a local filter, multi-select, and Connect for several hosts at once.
 - **Session overlays.** Centered cards on the window background. A material sign-in card prefills the user and domain, and only offers "Save password in Keychain" where saving is possible. The certificate card shows the fingerprint grouped in byte pairs and says that no credentials were sent. The ended card is worded by failure category, with Reconnect as the default action.
 - **Editors.** Grouped forms. Every inheritable setting offers "Inherit (value)", so the effective value is always visible. The inspector shows where each effective setting comes from.
+
+## SSH
+- **Mixed library.** SSH hosts sit in the same groups as RDP hosts. Their badge is graphite with a `</>` glyph (the color label still wins); tabs and the Overview's Protocol column use the `terminal` symbol.
+- **Terminal tab.** The terminal fills the area under the tab strip and stays visible in every state, so a server banner or the last output before a disconnect can be read. Connecting shows a thin bar with OpenSSH's actual stage and Cancel. Host keys, passwords, passphrases and codes appear as cards over a dimmed terminal; an ended session shows a bar at the bottom with Reconnect, Close and, for Quick Connect, Save as Connection.
+- **Keyboard.** ⌘ shortcuts belong to the app (copy, paste, find, font size, tabs); Control and Option keys go to the remote program. Option types the layout's characters unless "Option as Meta" is on.
+- **Defaults.** SF Mono 13 pt, dark or light with the system, blinking block cursor, 10,000 lines of scrollback, visual bell.
 
 ## Icon
 An original design rendered by `Scripts/render-icon.swift`: a deep blue squircle with two stacked windows (several sessions). The front window shows a remote screen with a pointer (you're in control) and a green "connected" light in its title bar. It uses no third-party marks or Windows logo.

@@ -7,7 +7,7 @@ RDP Manager is a privileged administration tool: it holds credentials for server
 - A password typed at the **sign-in prompt** is saved only when the user asks **and** the server verified it through NLA before activating the session. A password typed in the **connection editor** or the **Credentials** manager is a deliberate manual save and goes to the Keychain at once, unverified. A password the server refused is cleared from memory and is never retried automatically.
 - Revealing a saved password requires device-owner authentication (Touch ID or the login password) via LocalAuthentication.
 - Deleting a connection deletes its own Keychain item. Settings › Remove Unused Passwords deletes items that nothing references. It is unavailable while the library can't be read, because an unreadable library would make every password look unused.
-- Library exports contain no passwords and no connection history.
+- Library exports contain no passwords, key passphrases or keys, and no connection history. SSH key profiles carry the key's path, which may not exist on another Mac.
 - A session keeps the password in process memory while the session exists, so Reconnect works without a prompt. Swift `String`s cannot be zeroed reliably; this is a known limitation.
 
 ## Server identity
@@ -41,6 +41,9 @@ RDP Manager is a privileged administration tool: it holds credentials for server
 - Every bundled library (FreeRDP, OpenSSL, Kerberos, libusb, cJSON) is inside `Contents/Frameworks` and signed. The build fails if any binary references a path outside the bundle.
 - The app is **not sandboxed** in this version. Sandboxing would need network-client, user-selected-file and Keychain access-group entitlements and testing under them. It is planned before App Store-style distribution.
 - RDPKit is pinned to an exact version (0.7.0). Review its changelog and security notes before bumping.
+
+## SSH
+SSH sessions run the macOS OpenSSH client; host keys live in OpenSSH's `known_hosts`, separate from the RDP certificate store. Passwords and key passphrases use the same Keychain service under `ssh-password:<connection>` and `ssh-key-passphrase:<profile>` (SSH password profiles use `credential:<profile>`). The askpass design, host-key handling, terminal output rules, import rules and residual risks are in [docs/SSH-SECURITY.md](docs/SSH-SECURITY.md).
 
 ## Reporting
 Please report vulnerabilities privately to the maintainer rather than in public issues.

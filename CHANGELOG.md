@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+- **SSH terminals.** SSH hosts live in the same groups as RDP hosts and open in the same tabs and windows, in an in-app terminal (SwiftTerm 1.99.2) running the macOS OpenSSH client on a PTY. Sign-in follows `~/.ssh/config`: agent, key files, OpenSSH certificates, passwords, keyboard-interactive, GSSAPI and ProxyJump. The session's state comes from OpenSSH's own log, so "Connected" means the shell is live.
+- **Askpass.** Every OpenSSH prompt goes through a small bundled helper to the session that started ssh. Saved passwords and key passphrases are offered only for prompts that name that session's user and host or key, once per attempt; everything else is asked.
+- **Host keys.** Unknown keys are shown with their fingerprint before anything is sent; changed keys stop the connection before sign-in. OpenSSH's `known_hosts` is the trust store.
+- **Credentials.** Credential profiles can be RDP passwords, SSH passwords or SSH key files (type and fingerprint shown, passphrase in the Keychain). New Keychain accounts `ssh-password:` and `ssh-key-passphrase:`; existing ones are unchanged.
+- **Editor and groups.** Protocol picker; SSH sign-in, connection, forwarding and advanced settings with inherited values; groups hold separate RDP and SSH defaults. Agent forwarding is off by default and warns when on.
+- **Quick Connect** accepts `ssh://user@host[:port]` and has a protocol menu; `host` and `host:port` stay RDP.
+- **Settings › Terminal:** font, size, colors, cursor, scrollback, bell, Option as Meta, multi-line paste confirmation, remote clipboard writes (off by default).
+- **Import:** hosts from `~/.ssh/config`, parsed only. Library exports carry both protocols (format 2); imports drop SSH startup commands, agent forwarding, delegation and SendEnv.
+- Library schema 2. Libraries from 0.3.1 load unchanged as RDP; 0.3.1 can't open a schema 2 library.
+
 ## 0.3.1 (2026-11-05)
 - Search results show in the main table instead of replacing the sidebar. Swapping the sidebar left stale rows drawn over it, or an empty Connections section, after the search was cleared.
 - Fix: the Delete key deleted the selected connection, and its saved password, without asking. Deleting connections now always asks first, from the keyboard and both context menus.

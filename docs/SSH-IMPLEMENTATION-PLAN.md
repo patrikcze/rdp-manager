@@ -46,7 +46,7 @@ Additive. RDP types keep their exact semantics: `ConnectionSettings`/`ResolvedSe
 Transport abstraction: one protocol, `SSHTransport` (start/write/resize/stop and events). Only `OpenSSHProcessTransport` implements it. No plugin framework.
 
 ### How the process runs
-- `posix_spawn` of the exact path `/usr/bin/ssh` with an argument array (no shell), `POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT`, the PTY slave opened by path as fds 0–2 (it becomes the controlling terminal; verified), window size set on the slave before spawn.
+- `posix_spawn` of the exact path `/usr/bin/ssh` with an argument array (no shell), `POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT`, the PTY slave opened by path as fds 0–2, window size set on the slave before spawn. *Outcome:* macOS does not make the PTY the child's controlling terminal (only TIOCSCTTY does, which `posix_spawn` can't); the early check was misled by `/bin/sh` acquiring one itself. Resizes therefore signal SIGWINCH to the child explicitly.
 - Minimal, rebuilt environment: `HOME USER LOGNAME SHELL PATH TMPDIR LANG/LC_CTYPE SSH_AUTH_SOCK KRB5CCNAME` (if set), plus `SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE=force` and the askpass socket path. No secrets.
 - `ssh -v -E <fifo>` writes OpenSSH's own log to a FIFO in a private 0700 temp folder, read in memory only and never written to disk. It gives truthful phases ("Connection established", "Server host key", "Authenticated to … using …", "Entering interactive session"), the host key fingerprint, the negotiated KEX/cipher (measured, shown in the inspector) and failure reasons. Debug level 1 never contains passwords or prompts.
 - Reading on a dedicated dispatch source, writing on a serial queue, bounded buffers (output chunks are coalesced; the terminal's scrollback has a fixed limit). The session owns the pid: terminate with SIGHUP, then SIGKILL after a grace period, always reaped. Only that pid is signalled.
@@ -92,3 +92,11 @@ A review + plan · B embedded shell (PTY, I/O, resize, disconnect) · C protocol
 - Key, agent and encrypted-key auth verified against a local throwaway sshd; host keys enforced (unknown prompts, changed refused).
 - Password authentication through the Keychain verified end-to-end where a password server is available, otherwise marked unverified.
 - Docs list exactly what was verified.
+
+## 11. Outcome (2026-11-07)
+
+Milestones A–G landed on branch `feature/ssh-terminal`. Deviations from the plan:
+- SIGWINCH is sent explicitly (see §5).
+- Through a jump host or proxy (asked of `ssh -G`), the log level is VERBOSE instead of `-v`, because ProxyJump's inner ssh inherits `-v` and printed its debug log into the terminal. Sessions then count as connected at "Authenticated".
+- Automatic reconnect defaults to off for SSH.
+- Password and keyboard-interactive sign-in are implemented and unit-tested but not verified against a server (needs PAM). See docs/SSH-TESTING.md.

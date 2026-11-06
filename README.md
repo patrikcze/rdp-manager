@@ -4,14 +4,14 @@
 
 [![CI](https://github.com/patrikcze/rdp-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/patrikcze/rdp-manager/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/patrikcze/rdp-manager?include_prereleases)](https://github.com/patrikcze/rdp-manager/releases)
 
-A native macOS Remote Desktop manager for administrators who look after many Windows servers. You can organize hosts in nested groups, find any of them instantly, and work in several RDP sessions side by side in tabs or separate windows.
+A native macOS Remote Desktop and SSH manager for administrators who look after many servers. You can organize Windows and Linux hosts in the same nested groups, find any of them instantly, and work in RDP desktops and SSH terminals side by side in tabs or separate windows.
 
 Built with Swift 6, SwiftUI and AppKit on two RDP engines:
 
 - [RDPKit](https://github.com/steelbrain/RDPKit), pure Swift with hardware H.264, for everyday connections.
 - [FreeRDP 3](https://github.com/FreeRDP/FreeRDP), bundled, for Kerberos, Standard RDP Security and device redirection.
 
-The app picks the engine per connection.
+The app picks the engine per connection. SSH sessions run the macOS OpenSSH client in an in-app terminal ([SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)).
 
 ![Connection library with nested groups and the Overview table](docs/screenshots/overview.png)
 
@@ -31,7 +31,8 @@ The app picks the engine per connection.
 ## Features
 - **Connection library:** unlimited nested groups, drag and drop, inline rename, favorites, recent, color labels, tags, notes, and full-text search across names, hosts, tags and group paths.
 - **Inheritance:** groups set defaults (credentials, display, clipboard, audio, reconnect, timeout) that hosts inherit or override. The UI shows where each value comes from.
-- **Quick Connect (⌘K):** `host`, `host:port` or an IP address. You can save the connection afterwards.
+- **Quick Connect (⌘K):** `host`, `host:port` or an IP address for RDP; `ssh://user@host[:port]` or the protocol menu for SSH. You can save the connection afterwards.
+- **SSH terminals:** SSH hosts live beside RDP hosts and open in the same tabs: xterm emulation with 256 and true color, scrollback, find, bracketed paste, mouse reporting and resize without reconnecting. Sign-in through OpenSSH (`~/.ssh/config`, agent, key files, passwords, ProxyJump, certificates, GSSAPI) with passwords and key passphrases in the Keychain; unknown host keys are shown for review and changed ones are refused. Fonts, colors, cursor and scrollback in Settings › Terminal. See [docs/SSH-SECURITY.md](docs/SSH-SECURITY.md).
 - **Tabbed sessions:** many concurrent sessions, with state shown in the tabs. Tabs can be reordered, moved to their own window, and shown in focus mode or full screen.
 - **Remote desktop:** the resolution follows the window at Retina scale, with H.264/AVC444 decoded by VideoToolbox. Your Mac keyboard layout is announced to Windows, ⌘ acts as the Windows key, and Ctrl+Alt+Del and other keys can be sent from a menu. Clipboard text and files work in both directions, and remote audio can play on the Mac.
 - **Enterprise:**
@@ -44,7 +45,7 @@ The app picks the engine per connection.
 - **Self-contained app:** every library is bundled. `Scripts/make-dmg.sh` builds a distributable DMG, signed and notarized with a Developer ID. Tagged releases publish the DMG on GitHub Releases (RELEASING.md).
 - **Security:** passwords stay in the Keychain. Certificates are checked before any credential is sent, and changed certificates are flagged. NLA is the default (Standard RDP Security only when you choose it), and there is no telemetry.
 - **Reliability:** bounded automatic reconnect after network drops, never after sign-in or certificate failures. Errors are clear and explain what to do next.
-- **Import and export:** Microsoft `.rdp` files in both directions (import reports unsupported settings; Export as .rdp File… writes a connection's effective settings, never its password), plus JSON library export and import without passwords.
+- **Import and export:** Microsoft `.rdp` files in both directions for RDP hosts (import reports unsupported settings; Export as .rdp File… writes a connection's effective settings, never its password), hosts from `~/.ssh/config` (parsed only, nothing run), plus JSON library export and import of both protocols without secrets.
 
 ## Quick start
 ```bash
@@ -56,7 +57,7 @@ open "build/RDP Manager.app"
 Or open `Package.swift` in Xcode and run the `RDPManager` scheme. See [BUILDING.md](BUILDING.md).
 
 ## Status
-Version 0.3.1. Verified against Windows 11 on both engines: NLA sign-in, rendering, printer redirection and the shared certificate trust. 69 automated tests pass in CI; live sign-in tests passed before the 0.3.0 security fixes and haven't been rerun since. Kerberos, YubiKey/USB and microphone redirection aren't verified live yet, and serial ports are unsupported on macOS. See [TESTING.md](TESTING.md) and [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md).
+Version 0.3.1, with SSH support in development. Verified against Windows 11 on both engines: NLA sign-in, rendering, printer redirection and the shared certificate trust. SSH key, agent and encrypted-key sign-in, host-key checks, resize and ProxyJump are verified against a local OpenSSH server; password sign-in against a real server isn't yet (see [docs/SSH-TESTING.md](docs/SSH-TESTING.md)). 109 automated tests pass; live sign-in tests passed before the 0.3.0 security fixes and haven't been rerun since. Kerberos, YubiKey/USB and microphone redirection aren't verified live yet, and serial ports are unsupported on macOS. See [TESTING.md](TESTING.md) and [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md).
 
 ## Documentation
-[Architecture](ARCHITECTURE.md) · [Design](DESIGN.md) · [Backend decision](RDP-BACKEND-DECISION.md) · [Security](SECURITY.md) · [Testing](TESTING.md) · [Building](BUILDING.md) · [Limitations](KNOWN-LIMITATIONS.md) · [Plan](IMPLEMENTATION-PLAN.md) · [Changelog](CHANGELOG.md) · [Third-party notices](THIRD-PARTY-NOTICES.md)
+[Architecture](ARCHITECTURE.md) · [Design](DESIGN.md) · [Backend decision](RDP-BACKEND-DECISION.md) · [Security](SECURITY.md) · [SSH security](docs/SSH-SECURITY.md) · [Testing](TESTING.md) · [SSH testing](docs/SSH-TESTING.md) · [SSH plan](docs/SSH-IMPLEMENTATION-PLAN.md) · [Building](BUILDING.md) · [Limitations](KNOWN-LIMITATIONS.md) · [Plan](IMPLEMENTATION-PLAN.md) · [Changelog](CHANGELOG.md) · [Third-party notices](THIRD-PARTY-NOTICES.md)

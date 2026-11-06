@@ -5,9 +5,15 @@ Package.swift
 Sources/
   FreeRDPBridge/             C API over FreeRDP 3 (rm_session_*): connection, GDI frames,
                              input, Display Control, text clipboard, device channels
+  RDPManagerAskpass/         OpenSSH askpass helper: relays a prompt over the session's
+                             socket and prints the app's answer (bundled in Contents/MacOS)
   RDPManagerCore/            Pure Swift, no UI, no RDP engine — fully unit-tested
-    Models/                  Inventory, Folder, Connection, CredentialProfile,
-                             ConnectionSettings (inheritable), HostAddress
+    Models/                  Inventory, Folder, Connection (rdp/ssh), CredentialProfile
+                             (kind), ConnectionSettings and SSHConnectionSettings
+                             (inheritable, separate chains), HostAddress
+    SSH/                     ssh argument builder, OpenSSH log parser and SSHEndMapping,
+                             askpass prompt classifier and SSHSecretPolicy, Quick Connect
+                             targets, ~/.ssh/config importer, terminal preferences
     Persistence/             InventoryStore (@Observable, main actor), JSON file
                              persistence, schema migrator
     Security/                SecretStore protocol, KeychainSecretStore, InMemorySecretStore
@@ -30,6 +36,10 @@ Sources/
       FreeRDPCanvas          framebuffer layer, keyboard/pointer/scroll, remote cursor
       FreeRDPEndMapping      FreeRDP error + Set Error Info → SessionEnd / re-prompt
       CertificateTrustStore  user-trusted certs, shared by both engines
+      SSH/                   SSHSession (state, prompts, reconnect), SSHTransport and
+                             OpenSSHProcessTransport, PTYProcess (posix_spawn, PTY,
+                             reaping), SSHSideChannels (log FIFO, askpass socket, peer
+                             checks), SSHTerminalView (SwiftTerm)
       CredentialService      Keychain calls off the main actor
     DesignSystem/            colors, status dot, small shared views
     Features/                Sidebar, Workspace (window, tabs, overview table),
@@ -78,5 +88,11 @@ idle → resolvingCredentials → connecting → connected
 `ReconnectPolicy` (core, tested) only ever retries network failures of a session that was showing the desktop. Authentication, certificate, server and client failures never loop.
 
 **Tabs and windows.** `Workspace` keeps sessions in order. The main window renders every tabbed session in a `ZStack` and shows only the selected one, so switching tabs never tears down a connection. The canvas `NSView` belongs to the session, not to SwiftUI. Moving a session to its own window re-parents the canvas into the new window's host view, and closing that window puts it back as a tab.
+
+**SSH sessions.** `SSHSession` (`@MainActor @Observable`) runs `/usr/bin/ssh` through `SSHTransport`; `OpenSSHProcessTransport` is the only implementation. The process runs on a PTY from `posix_spawn` (argument array, no shell, `CLOEXEC_DEFAULT`, own session). macOS gives such a child no controlling terminal, so the PTY layer signals SIGWINCH to that pid after each resize. `ssh -v -E <fifo>` writes OpenSSH's own log to a FIFO in a per-session 0700 folder; `SSHLogParser` turns it into the session's states: connecting → verifying host key → authenticating → connected (OpenSSH's "Entering interactive session", or "Authenticated" through a jump host, where the log is VERBOSE so the jump's ssh stays quiet). `SSH_ASKPASS_REQUIRE=force` routes every prompt to `RDPManagerAskpass`, which relays it to the session's socket; the session checks the peer (same uid, bundled helper, below its own ssh), classifies the prompt, and answers from the Keychain only where `SSHSecretPolicy` allows, otherwise asks the user. PTY reads, writes, the FIFO and the socket share one serial queue; events reach the main actor in order through the main queue. Output goes straight to SwiftTerm's thread-safe `feed`. `SSHEndMapping` (core) interprets how ssh ended; reconnects go through `ReconnectPolicy`.
+
+**Workspace.** `Workspace.sessions` is `[WorkspaceSession]`, an enum over `RemoteSession` and `SSHSession` with the shared surface (id, title, status, surface view, connect/disconnect/close). Views switch on the case only where protocols differ, so menus never offer RDP actions to SSH or the reverse. `SessionStatus` (core) is the protocol-neutral state behind status dots and tables.
+
+**Data model.** Schema 2 adds `Connection.connectionProtocol` and `.ssh`, `Folder.sshDefaults` and `CredentialProfile.kind`; tolerant decoders read schema 1 unchanged. SSH settings inherit through their own folder chain, so RDP settings and credentials never flow into SSH. Keychain accounts add `ssh-password:<connection>` and `ssh-key-passphrase:<profile>`.
 
 **Concurrency.** Swift 6 language mode throughout. UI and session state live on the main actor. Keychain I/O runs in detached tasks because a read can block on the access dialog. The engine runs on its own thread, and `onWireReceive` runs on the SwiftNIO event loop and only records samples.
