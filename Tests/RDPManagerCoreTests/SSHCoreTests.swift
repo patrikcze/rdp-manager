@@ -408,6 +408,20 @@ struct SSHPromptTests {
         #expect(nothingSaved.secret(for: .unknownHostKey(SSHHostKeyPrompt(host: "h", keyType: nil, fingerprint: nil, text: ""))) == nil)
     }
 
+    @Test func aServerCannotForgeTheKeyboardInteractivePrefix() {
+        // A hostile jump host chooses the prompt text after OpenSSH's "(user@host) " prefix.
+        let forged = "(alice@jump.evil) Enter code (alice@db.internal) Password:"
+        #expect(SSHPromptClassifier.classify(forged, hint: nil)
+            == .keyboardInteractive(user: "alice", host: "jump.evil", prompt: "Enter code (alice@db.internal) Password:", isPasswordLike: false))
+        var anyUser = SSHSecretPolicy(host: "db.internal", username: "", keyPath: nil, hasPassword: true, hasPassphrase: false)
+        #expect(anyUser.secret(for: SSHPromptClassifier.classify(forged, hint: nil)) == nil)
+        // Without a known user, keyboard-interactive is never answered from the Keychain.
+        #expect(anyUser.secret(for: .keyboardInteractive(user: "alice", host: "db.internal", prompt: "Password:", isPasswordLike: true)) == nil)
+        // AD-style users keep working.
+        #expect(SSHPromptClassifier.classify("(alice@corp.example@db) Password:", hint: nil)
+            == .keyboardInteractive(user: "alice@corp.example", host: "db", prompt: "Password:", isPasswordLike: true))
+    }
+
     @Test func promptTextIsCleaned() {
         let text = SSHPromptClassifier.clean("Password:\u{1B}[31m \u{202E}evil" + String(repeating: "x", count: 10000))
         #expect(text.contains("\u{1B}") == false)

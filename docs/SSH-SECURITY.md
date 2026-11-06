@@ -16,7 +16,7 @@ Assumptions are the same as for RDP: the network and servers may be hostile; the
 - The app accepts a socket connection only when the peer runs as the same uid (`LOCAL_PEERCRED`), its executable is the bundled helper (`proc_pidpath`), and it descends, within four parents, from the ssh process that session started (`LOCAL_PEERPID`, `proc_pidinfo`). Other processes are disconnected before a byte is read.
 - Each prompt is classified (`SSHPromptClassifier`). A saved secret is read from the Keychain and returned only when `SSHSecretPolicy` allows it:
   - a password prompt naming the session's own user (if known) and host;
-  - a keyboard-interactive prompt that is exactly `Password:` for that user and host;
+  - a keyboard-interactive prompt that is exactly `Password:` for that user and host, only when the connection names its user. Only OpenSSH's own `(user@host) ` prefix is read; the server writes the rest of the prompt, and a jump host's server is asked through the same helper, so a forged `(user@target) Password:` later in the text is ignored;
   - a passphrase prompt naming the configured key file;
   - at most once per attempt. A second request means the secret was refused, and the user is asked instead, with a note.
 - Everything else goes to the user: unknown host keys, yes/no questions, one-time codes, PINs, unknown prompts (shown as text, answer hidden). Cancelling ends the attempt rather than sending an empty answer.

@@ -80,7 +80,9 @@ public enum SSHPromptClassifier {
         if let match = singleLine.wholeMatch(of: /(.+)@([^@\s]+)'s password:/) {
             return .password(user: String(match.1), host: String(match.2))
         }
-        if let match = singleLine.wholeMatch(of: /\((.+)@([^@\s)]+)\) (.*)/) {
+        // OpenSSH's own prefix only: "(user@host) " at the start, ended by the first ")". The
+        // rest is chosen by the server and may contain a fake "(user@other) Password:".
+        if let match = singleLine.wholeMatch(of: /\(([^\s()]+)@([^@\s()]+)\) (.*)/) {
             let inner = String(match.3)
             return .keyboardInteractive(user: String(match.1), host: String(match.2), prompt: inner,
                                         isPasswordLike: isPasswordWord(inner))
@@ -156,7 +158,10 @@ public struct SSHSecretPolicy: Equatable, Sendable {
             guard hasPassword, matches(user: user, host: promptHost) else { return nil }
             return offer(.password)
         case let .keyboardInteractive(user, promptHost, _, isPasswordLike):
-            guard hasPassword, isPasswordLike, let user, let promptHost, matches(user: user, host: promptHost) else { return nil }
+            // Keyboard-interactive text comes from the server, and through a jump host the
+            // jump's server asks too: answer only when the app knows the exact user.
+            guard hasPassword, isPasswordLike, username.isEmpty == false, let user, let promptHost,
+                  matches(user: user, host: promptHost) else { return nil }
             return offer(.password)
         case let .passphrase(path):
             guard hasPassphrase, let keyPath, Self.samePath(path, keyPath) else { return nil }
