@@ -134,6 +134,10 @@ private func useBuiltAskpassHelper() {
     }
 }
 
+private func privateFolders() -> [String] {
+    (try? FileManager.default.contentsOfDirectory(atPath: NSTemporaryDirectory()).filter { $0.hasPrefix("rdpm-ssh.") }) ?? []
+}
+
 private func openDescriptorCount() -> Int {
     (try? FileManager.default.contentsOfDirectory(atPath: "/dev/fd").count) ?? 0
 }
@@ -454,6 +458,7 @@ final class SSHLocalServerTests {
         let server = try TestSSHServer(authorizedKeys: [])
         defer { server.stop() }
         let before = openDescriptorCount()
+        let foldersBefore = Set(privateFolders())
         let session = try makeSession(server: server, key: nil, knownHosts: server.directory.appending(path: "known_hosts"))
         session.connect()
         let asked = await wait(for: session) { if case .awaitingHostKeyDecision = $0 { true } else { $0.isEnded } }
@@ -464,7 +469,7 @@ final class SSHLocalServerTests {
         #expect(end.kind == .userDisconnected)
         try? await Task.sleep(for: .milliseconds(300))
         #expect(openDescriptorCount() <= before, "descriptors before \(before), after \(openDescriptorCount())")
-        let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: NSTemporaryDirectory()).filter { $0.hasPrefix("rdpm-ssh.") }) ?? []
+        let leftovers = Set(privateFolders()).subtracting(foldersBefore)
         #expect(leftovers.isEmpty, "private folders left: \(leftovers)")
     }
 
