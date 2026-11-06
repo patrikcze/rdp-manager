@@ -16,9 +16,10 @@ The end-to-end suite starts a throwaway `sshd` as the current user on `127.0.0.1
 | `SSHLogTests` | OpenSSH log messages; hostile log text sanitized and bounded; failures categorized (auth, DNS, refused, timeout, no common algorithm, changed host key, user disconnect, drop after connect, remote exit); reconnect only after a dropped live session |
 | `SSHPromptTests` | Real OpenSSH prompts (host key with port, password, passphrase, keyboard-interactive, OTP, PIN, FIDO notice, IP mismatch); saved secrets answer only matching prompts, once; prompt text cleaned |
 | `SSHInputTests` | Quick Connect parsing (RDP stays default, `ssh://`, `ssh user@host`, IPv6, injection refused); `~/.ssh/config` import (concrete hosts, wildcards and Match skipped, commands never imported, Include); risky paste; preference clamping and safe defaults |
+| `AskpassChannelTests` | An askpass connection made before ssh's pid is known waits in the backlog instead of failing the peer check (it failed the host key and passphrase prompts on a slower CI machine); closing before accepting releases the socket |
 | `SSHLocalServerTests` | Real ssh against a local sshd: unknown host key asked, trusted, recorded with the port, and not asked again; changed host key refused before sign-in; wrong key fails without retry; encrypted key's passphrase answered from the store through the askpass helper (peer checks included); a wrong saved passphrase asks the user; agent keys; resize reaches the server without reconnecting; ProxyJump without debug output in the terminal; remote exit ends without reconnect; silent server times out; cancel at the host key prompt leaves no descriptors or folders; rejecting the host key sends nothing |
 
-Last run: 2026-11-07, macOS 27.2, OpenSSH 10.5p1, Swift 6.4.2, Apple Silicon. 109 tests pass (71 core, 38 integration), including 12 end-to-end SSH tests.
+Last run: 2026-11-07, macOS 27.2, OpenSSH 10.5p1, Swift 6.4.2, Apple Silicon. 112 tests pass (72 core, 40 integration), including 12 end-to-end SSH tests.
 
 ## Verified by hand
 

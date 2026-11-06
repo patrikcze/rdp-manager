@@ -108,7 +108,9 @@ final class OpenSSHProcessTransport: SSHTransport {
                     delivery.deliver { $0.delegate?.transport(exitedWithStatus: status, signal: signal) }
                 }
             )
-            channels.trustedAncestor = process.pid
+            // Only now, with ssh's pid known, are its askpass connections read. One that came
+            // earlier waited in the listen backlog instead of failing the peer check.
+            channels.startAccepting(from: process.pid)
             self.process = process
         } catch {
             channels.close()
@@ -166,8 +168,7 @@ final class SSHSideChannels: @unchecked Sendable {
     var onAskpass: (@Sendable (AskpassRequest, @escaping @Sendable (String?) -> Void) -> Void)?
     /// The ssh process: askpass connections must come from the helper running below it.
     var trustedAncestor: pid_t {
-        get { lock.withLock { ancestor } }
-        set { lock.withLock { ancestor = newValue } }
+        lock.withLock { ancestor }
     }
 
     private let lock = NSLock()
@@ -178,6 +179,8 @@ final class SSHSideChannels: @unchecked Sendable {
     private var logBuffer: [UInt8] = []
     private var listener: Int32 = -1
     private var listenSource: DispatchSourceRead?
+    /// The listen source starts suspended and is resumed once, by `startAccepting(from:)`.
+    private var accepting = false
     private var clients: [Int32: DispatchSourceRead] = [:]
     private var closed = false
 
@@ -274,8 +277,19 @@ final class SSHSideChannels: @unchecked Sendable {
         let fd = listener
         source.setEventHandler { [weak self] in self?.accept() }
         source.setCancelHandler { Darwin.close(fd) }
-        source.resume()
+        // Not resumed yet: until ssh's pid is known no connection could pass the peer check.
         listenSource = source
+    }
+
+    /// Starts reading askpass connections, which must come from the helper below `ancestor`.
+    /// Connections made before this wait in the backlog.
+    func startAccepting(from ancestor: pid_t) {
+        lock.withLock { self.ancestor = ancestor }
+        queue.async { [self] in
+            guard closed == false, accepting == false, let listenSource else { return }
+            accepting = true
+            listenSource.resume()
+        }
     }
 
     private func accept() {
@@ -360,6 +374,11 @@ final class SSHSideChannels: @unchecked Sendable {
             logSource = nil
             if logKeepAlive >= 0 { Darwin.close(logKeepAlive) }
             logKeepAlive = -1
+            // A suspended source must be resumed before it is cancelled and released.
+            if let listenSource, accepting == false {
+                accepting = true
+                listenSource.resume()
+            }
             listenSource?.cancel()
             listenSource = nil
             unlink(socketPath)
