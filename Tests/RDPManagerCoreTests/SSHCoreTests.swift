@@ -256,6 +256,25 @@ struct SSHCommandTests {
         #expect(throws: SSHArgumentError.self) { try SSHCommandBuilder.arguments(for: target, logPath: "/l") }
     }
 
+    @Test func proxiesUseAQuieterLogAndConfigQueriesNeverConnect() throws {
+        let direct = try SSHCommandBuilder.arguments(for: SSHTarget(host: "h"), logPath: "/l")
+        #expect(direct.prefix(1) == ["-v"])
+        let jump = SSHTarget(host: "h", settings: ResolvedSSHSettings(SSHConnectionSettings(proxyJump: "bastion")))
+        let jumped = try SSHCommandBuilder.arguments(for: jump, logPath: "/l")
+        #expect(jumped.contains("-v") == false)
+        #expect(jumped.contains("LogLevel=VERBOSE"))
+        var command = SSHTarget(host: "h", settings: ResolvedSSHSettings(SSHConnectionSettings(startupCommand: "rm -rf /")))
+        command.port = 2222
+        let query = try SSHCommandBuilder.configQueryArguments(for: command)
+        #expect(query.first == "-G")
+        #expect(query.last == "h")
+        #expect(query.contains("rm -rf /") == false)
+        #expect(query.contains("-E") == false)
+        #expect(SSHCommandBuilder.configUsesProxy("user me\nproxyjump bastion\n"))
+        #expect(SSHCommandBuilder.configUsesProxy("proxycommand nc %h %p\n"))
+        #expect(SSHCommandBuilder.configUsesProxy("proxyjump none\nport 22\n") == false)
+    }
+
     @Test func knownHostsCanNeverBeDevNull() {
         var target = SSHTarget(host: "h")
         target.userKnownHostsFile = "/dev/null"

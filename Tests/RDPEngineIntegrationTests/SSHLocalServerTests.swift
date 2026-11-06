@@ -410,6 +410,32 @@ final class SSHLocalServerTests {
         await session.waitUntilEnded(timeout: 5)
     }
 
+    @Test func proxyJumpConnectsWithoutDebugOutputInTheTerminal() async throws {
+        let server = try TestSSHServer(authorizedKeys: [])
+        defer { server.stop() }
+        let key = try server.makeKey("user")
+        try String(contentsOf: key.appendingPathExtension("pub"), encoding: .utf8)
+            .write(to: server.directory.appending(path: "authorized_keys"), atomically: true, encoding: .utf8)
+        let knownHosts = server.directory.appending(path: "known_hosts")
+        let hostKey = try String(contentsOf: server.hostKey.appendingPathExtension("pub"), encoding: .utf8)
+        try "[127.0.0.1]:\(server.port) \(hostKey)[localhost]:\(server.port) \(hostKey)".write(to: knownHosts, atomically: true, encoding: .utf8)
+        // The jump's own ssh reads only the config file, so it carries the test's key and
+        // known_hosts too: nothing in ~/.ssh is used.
+        try "Host *\n  IdentityFile \(key.path)\n  IdentitiesOnly yes\n  UserKnownHostsFile \(knownHosts.path)\n"
+            .write(to: server.directory.appending(path: "client_config"), atomically: true, encoding: .utf8)
+        var settings = SSHConnectionSettings()
+        settings.proxyJump = "localhost:\(server.port)"
+        settings.startupCommand = "echo through-the-jump; exec sleep 30"
+        let session = try makeSession(server: server, key: key, knownHosts: knownHosts, settings: settings)
+        session.connect()
+        #expect(await wait(for: session) { $0 == .connected || $0.isEnded } == .connected)
+        #expect(await waitForText("through-the-jump", in: session))
+        #expect(screenText(session).contains("debug1") == false, "terminal: \(screenText(session))")
+        #expect(session.authenticationMethod == "publickey")
+        session.close()
+        await session.waitUntilEnded(timeout: 5)
+    }
+
     @Test func remoteExitEndsTheSessionWithoutReconnect() async throws {
         let server = try TestSSHServer(authorizedKeys: [])
         defer { server.stop() }

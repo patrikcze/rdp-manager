@@ -87,7 +87,7 @@ final class SSHSession: Identifiable {
     let id = UUID()
     let connectionID: UUID?
     private(set) var title: String
-    let target: SSHTarget
+    private(set) var target: SSHTarget
     private(set) var phase: SSHSessionPhase = .idle
     private(set) var connectedAt: Date?
     private(set) var reconnectCount = 0
@@ -217,10 +217,12 @@ final class SSHSession: Identifiable {
         let thisAttempt = attempt
         // Whether secrets are saved is checked without reading them; they are read only for
         // a prompt that matches (SSHSecretPolicy).
-        Task { [weak self, credentials, secretAccounts] in
+        Task { [weak self, credentials, secretAccounts, target] in
+            let usesProxy = await SSHConfigProbe.usesProxy(target)
             let hasPassword = if let account = secretAccounts.password { await credentials.hasPassword(for: account) } else { false }
             let hasPassphrase = if let account = secretAccounts.passphrase { await credentials.hasPassword(for: account) } else { false }
             guard let self, attempt == thisAttempt else { return }
+            self.target.usesProxy = usesProxy
             policy.hasPassword = hasPassword
             policy.hasPassphrase = hasPassphrase
             launch()
@@ -356,16 +358,24 @@ extension SSHSession: SSHTransportDelegate {
             securityKeyNotice = nil
             if phase == .verifyingHostKey { phase = .authenticating }
             saveTypedSecret(acceptedBy: method)
+            // Through a proxy the log is quieter (see SSHTarget.usesProxy): signing in is the
+            // last thing it reports before the shell.
+            if target.usesProxy || target.settings.proxyJump != nil { markConnected() }
         case .interactiveSession:
-            reconnectCount = 0
-            wasConnected = true
-            connectedAt = Date()
-            securityKeyNotice = nil
-            phase = .connected
-            onConnected?(self)
+            markConnected()
         default:
             break
         }
+    }
+
+    private func markConnected() {
+        guard phase != .connected else { return }
+        reconnectCount = 0
+        wasConnected = true
+        connectedAt = Date()
+        securityKeyNotice = nil
+        phase = .connected
+        onConnected?(self)
     }
 
     func transport(asked request: AskpassRequest, reply: @escaping @Sendable (String?) -> Void) {

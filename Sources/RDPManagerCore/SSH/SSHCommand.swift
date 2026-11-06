@@ -14,6 +14,11 @@ public struct SSHTarget: Equatable, Sendable {
     /// temporary files so they never read or change the user's own.
     public var configFile: String?
     public var userKnownHostsFile: String?
+    /// The connection goes through a jump host or proxy command. The jump's own ssh inherits
+    /// `-v` and would print its debug log into the terminal, so the log level is VERBOSE
+    /// instead: quieter, and with less to read (no host key or cipher details, and the session
+    /// counts as live once authentication succeeds).
+    public var usesProxy = false
 
     public init(host: String, port: UInt16 = 22, username: String = "", settings: ResolvedSSHSettings = .builtIn, profileKeyPath: String? = nil) {
         self.host = host
@@ -111,7 +116,10 @@ public enum SSHCommandBuilder {
             guard knownHosts != "/dev/null" else { throw .invalid(field: "known_hosts file", value: knownHosts) }
             options.append(("UserKnownHostsFile", try quotedPath(knownHosts, field: "known_hosts file")))
         }
-        var arguments = ["-v", "-E", logPath]
+        if let knownHosts = target.userKnownHostsFile, knownHosts.isEmpty { throw .invalid(field: "known_hosts file", value: knownHosts) }
+        var arguments = target.usesProxy || settings.proxyJump.map({ $0 != "none" }) == true
+            ? ["-o", "LogLevel=VERBOSE", "-E", logPath]
+            : ["-v", "-E", logPath]
         if let configFile = target.configFile {
             _ = try quotedPath(configFile, field: "config file")
             arguments += ["-F", configFile]
@@ -141,6 +149,39 @@ public enum SSHCommandBuilder {
             arguments.append(command)
         }
         return arguments
+    }
+
+    /// Arguments for `ssh -G`, which prints the configuration OpenSSH would use for the target
+    /// without connecting. Used to learn whether `~/.ssh/config` routes it through a proxy.
+    public static func configQueryArguments(for target: SSHTarget) throws(SSHArgumentError) -> [String] {
+        let full = try arguments(for: target, logPath: "/dev/null")
+        // Drop the log options and the remote command; keep options, -p, -l, -- and destination.
+        var result = ["-G"]
+        var index = 0
+        while index < full.count {
+            let argument = full[index]
+            if argument == "-v" { index += 1; continue }
+            if argument == "-E" { index += 2; continue }
+            if argument == "-o", index + 1 < full.count, full[index + 1].hasPrefix("LogLevel=") { index += 2; continue }
+            result.append(argument)
+            if argument == "--" {
+                if index + 1 < full.count { result.append(full[index + 1]) }
+                break
+            }
+            index += 1
+        }
+        return result
+    }
+
+    /// Whether `ssh -G` output routes the connection through ProxyJump or ProxyCommand.
+    public static func configUsesProxy(_ output: String) -> Bool {
+        for line in output.split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: " ", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            let key = parts[0].lowercased()
+            if (key == "proxyjump" || key == "proxycommand"), parts[1] != "none" { return true }
+        }
+        return false
     }
 
     /// The remote command for a startup directory and command, or nil for the login shell.
