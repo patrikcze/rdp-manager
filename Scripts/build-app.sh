@@ -18,12 +18,16 @@ BUILD="${BUILD:-$(Scripts/version.sh --build)}"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 
 swift build -c "$CONFIG" --arch arm64
-BIN="$(swift build -c "$CONFIG" --arch arm64 --show-bin-path)/RDPManager"
+BIN_DIR="$(swift build -c "$CONFIG" --arch arm64 --show-bin-path)"
+BIN="$BIN_DIR/RDPManager"
 
 APP="build/RDP Manager.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/RDPManager"
+# OpenSSH's askpass helper for SSH sessions, next to the app's executable, where the app
+# looks for it and checks that askpass connections come from it.
+cp "$BIN_DIR/RDPManagerAskpass" "$APP/Contents/MacOS/RDPManagerAskpass"
 sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" -e "s/__FULL_VERSION__/$FULL_VERSION/" \
   Resources/Info.plist > "$APP/Contents/Info.plist"
 if [[ -f Resources/AppIcon.icns ]]; then
@@ -67,11 +71,13 @@ SPAN_LIB="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-6
 if otool -L "$APP/Contents/MacOS/RDPManager" | grep -q libswiftCompatibilitySpan && [[ -f "$SPAN_LIB" ]]; then
   cp "$SPAN_LIB" "$FRAMEWORKS/"
 fi
-# Drop build-machine search paths from the executable; system ones (/usr/lib/swift) stay.
-for rpath in $(otool -l "$APP/Contents/MacOS/RDPManager" | awk '/LC_RPATH/{getline;getline;print $2}' | grep -E "^($ROOT|/opt/homebrew|/usr/local|/Applications/Xcode)"); do
-  install_name_tool -delete_rpath "$rpath" "$APP/Contents/MacOS/RDPManager"
+# Drop build-machine search paths from the executables; system ones (/usr/lib/swift) stay.
+for exe in "$APP/Contents/MacOS/RDPManager" "$APP/Contents/MacOS/RDPManagerAskpass"; do
+  for rpath in $(otool -l "$exe" | awk '/LC_RPATH/{getline;getline;print $2}' | grep -E "^($ROOT|/opt/homebrew|/usr/local|/Applications/Xcode)"); do
+    install_name_tool -delete_rpath "$rpath" "$exe"
+  done
 done
-if otool -L "$APP/Contents/MacOS/RDPManager" "$FRAMEWORKS"/*.dylib | grep -E "/opt/homebrew|/usr/local|$ROOT"; then
+if otool -L "$APP/Contents/MacOS/RDPManager" "$APP/Contents/MacOS/RDPManagerAskpass" "$FRAMEWORKS"/*.dylib | grep -E "/opt/homebrew|/usr/local|$ROOT"; then
   echo "A bundled binary still references a build-machine path"; exit 1
 fi
 cp "$ROOT/THIRD-PARTY-NOTICES.md" "$APP/Contents/Resources/"
@@ -79,6 +85,8 @@ cp "$ROOT/THIRD-PARTY-NOTICES.md" "$APP/Contents/Resources/"
 LICENSES="$APP/Contents/Resources/Licenses"
 mkdir -p "$LICENSES"
 BREW="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
+SWIFTTERM_LICENSE="$ROOT/.build/checkouts/SwiftTerm/LICENSE"
+[[ -f "$SWIFTTERM_LICENSE" ]] && cp "$SWIFTTERM_LICENSE" "$LICENSES/SwiftTerm.txt"
 for pair in "FreeRDP:$ROOT/ThirdParty/FreeRDP-src/LICENSE" "OpenSSL:$BREW/opt/openssl@3/LICENSE.txt" \
             "MIT-Kerberos:$BREW/opt/krb5/NOTICE" "libusb:$BREW/opt/libusb/COPYING" "cJSON:$BREW/opt/cjson/LICENSE"; do
   [[ -f "${pair#*:}" ]] && cp "${pair#*:}" "$LICENSES/${pair%%:*}.txt"
@@ -99,6 +107,8 @@ if [[ "$SIGN_IDENTITY" == "-" ]]; then
 fi
 TIMESTAMP="--timestamp=none"
 [[ "$SIGN_IDENTITY" == "-" ]] || TIMESTAMP="--timestamp"
+# The helper has no entitlements: it only relays a prompt over a socket.
+codesign --force --options runtime $TIMESTAMP --sign "$SIGN_IDENTITY" "$APP/Contents/MacOS/RDPManagerAskpass"
 codesign --force --options runtime $TIMESTAMP --entitlements "$ENTITLEMENTS" --sign "$SIGN_IDENTITY" "$APP"
 codesign --verify --strict "$APP"
 echo "Built $APP ($CONFIG, $FULL_VERSION ($BUILD), signed with '$SIGN_IDENTITY')"

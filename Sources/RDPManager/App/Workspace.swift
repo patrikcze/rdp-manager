@@ -18,11 +18,12 @@ enum WorkspaceTab: Hashable {
     case session(UUID)
 }
 
-/// Open sessions and how they are arranged: tabs in the main window, or detached windows.
+/// Open sessions of both protocols and how they are arranged: tabs in the main window, or
+/// detached windows.
 @MainActor
 @Observable
 final class Workspace {
-    private(set) var sessions: [RemoteSession] = []
+    private(set) var sessions: [WorkspaceSession] = []
     var selectedTab: WorkspaceTab = .overview
     private(set) var detachedSessionIDs: Set<UUID> = []
     /// Hides the sidebar, tab bar and inspector so the remote desktop gets the whole window.
@@ -31,28 +32,36 @@ final class Workspace {
     @ObservationIgnored private let inventory: InventoryStore
     @ObservationIgnored private let credentials: CredentialService
     @ObservationIgnored private let trustStore: CertificateTrustStore
+    /// Appearance of new and open terminals; set by the app from Settings.
+    @ObservationIgnored var terminalPreferences: TerminalPreferences {
+        didSet {
+            for case let .ssh(session) in sessions { session.apply(terminalPreferences) }
+        }
+    }
 
-    init(inventory: InventoryStore, credentials: CredentialService, trustStore: CertificateTrustStore) {
+    init(inventory: InventoryStore, credentials: CredentialService, trustStore: CertificateTrustStore,
+         terminalPreferences: TerminalPreferences = TerminalPreferences()) {
         self.inventory = inventory
         self.credentials = credentials
         self.trustStore = trustStore
+        self.terminalPreferences = terminalPreferences
     }
 
-    var tabbedSessions: [RemoteSession] {
+    var tabbedSessions: [WorkspaceSession] {
         sessions.filter { detachedSessionIDs.contains($0.id) == false }
     }
 
-    var selectedSession: RemoteSession? {
+    var selectedSession: WorkspaceSession? {
         guard case let .session(id) = selectedTab else { return nil }
         return session(id)
     }
 
-    func session(_ id: UUID) -> RemoteSession? {
+    func session(_ id: UUID) -> WorkspaceSession? {
         sessions.first { $0.id == id }
     }
 
     /// Sessions open for a saved connection, for the sidebar's status dots.
-    func sessions(for connectionID: UUID) -> [RemoteSession] {
+    func sessions(for connectionID: UUID) -> [WorkspaceSession] {
         sessions.filter { $0.connectionID == connectionID }
     }
 
@@ -62,12 +71,16 @@ final class Workspace {
     func open(_ connectionID: UUID, newSession: Bool = false) {
         if newSession == false, let existing = sessions(for: connectionID).first {
             show(existing)
-            if case .ended = existing.phase {
+            if existing.isEnded {
                 existing.connect()
             }
             return
         }
         guard let connection = inventory.connection(connectionID) else { return }
+        if connection.isSSH {
+            openSSH(connection)
+            return
+        }
         let session = RemoteSession(
             connectionID: connection.id,
             title: connection.name,
@@ -78,6 +91,84 @@ final class Workspace {
             trustStore: trustStore
         )
         add(session)
+    }
+
+    /// An SSH session for a saved connection: its resolved SSH settings, its user, and the
+    /// Keychain accounts its prompts may be answered from.
+    private func openSSH(_ connection: Connection) {
+        let settings = inventory.resolvedSSHSettings(for: connection)
+        var passwordAccount: SecretAccount?
+        var passphraseAccount: SecretAccount?
+        var profileKey: String?
+        switch settings.secret {
+        case .none:
+            // Nothing saved yet; a password typed at the prompt may be saved for this host.
+            passwordAccount = .sshPassword(connection.id)
+        case .connectionSecret:
+            passwordAccount = .sshPassword(connection.id)
+        case let .profile(id):
+            if let profile = inventory.credential(id) {
+                switch profile.kind {
+                case .sshPassword: passwordAccount = .credential(id)
+                case .sshKey:
+                    passphraseAccount = .sshKeyPassphrase(id)
+                    profileKey = profile.keyPath
+                case .rdpPassword: break // never used for SSH
+                }
+            }
+        }
+        let target = SSHTarget(
+            host: connection.host, port: connection.port,
+            username: inventory.sshUsername(for: connection),
+            settings: settings, profileKeyPath: profileKey
+        )
+        let session = SSHSession(
+            connectionID: connection.id, title: connection.name, target: target,
+            passwordAccount: passwordAccount, passphraseAccount: passphraseAccount,
+            credentials: credentials, preferences: terminalPreferences
+        )
+        addSSH(session)
+    }
+
+    /// An SSH session to a typed address. Nothing is saved, passwords included.
+    func quickConnectSSH(username: String, address: HostAddress) {
+        var target = SSHTarget(host: address.host, port: address.port, username: username)
+        #if DEBUG
+        // Debug builds only: RDPM_SSH_CONFIG and RDPM_SSH_KNOWN_HOSTS point a Quick Connect
+        // at a throwaway sshd without reading or changing ~/.ssh (UI checks, see TESTING.md).
+        let environment = ProcessInfo.processInfo.environment
+        target.configFile = environment["RDPM_SSH_CONFIG"]
+        target.userKnownHostsFile = environment["RDPM_SSH_KNOWN_HOSTS"]
+        if let key = environment["RDPM_SSH_KEY"] { target.settings.identityFile = key }
+        #endif
+        let session = SSHSession(
+            connectionID: nil, title: address.host,
+            target: target,
+            passwordAccount: nil, passphraseAccount: nil,
+            credentials: credentials, preferences: terminalPreferences
+        )
+        addSSH(session)
+    }
+
+    private func addSSH(_ session: SSHSession) {
+        session.onConnected = { [weak inventory] session in
+            if let id = session.connectionID { inventory?.recordConnected(id) }
+        }
+        session.onSavedConnectionPassword = { [weak inventory] session in
+            // A connection that had nothing saved now uses its own saved password.
+            guard let inventory, let id = session.connectionID, var connection = inventory.connection(id) else { return }
+            if inventory.resolvedSSHSettings(for: connection).secret == SSHSecretSource.none {
+                connection.ssh.secret = .connectionSecret
+                inventory.update(connection)
+            }
+        }
+        sessions.append(.ssh(session))
+        selectedTab = .session(session.id)
+        // Start once the tab's view is in the window, so the first terminal size is the view's.
+        Task { @MainActor in
+            await Task.yield()
+            session.connect()
+        }
     }
 
     /// Connects to a typed address without saving it.
@@ -109,7 +200,7 @@ final class Workspace {
                 inventory.update(connection)
             }
         }
-        sessions.append(session)
+        sessions.append(.rdp(session))
         selectedTab = .session(session.id)
         // Connect once the tab's view is in the window, so the first desktop size is the view's.
         Task { @MainActor in
@@ -118,7 +209,7 @@ final class Workspace {
         }
     }
 
-    func show(_ session: RemoteSession) {
+    func show(_ session: WorkspaceSession) {
         if detachedSessionIDs.contains(session.id) {
             NSApp.windows.first { $0.identifier?.rawValue == Self.windowIdentifier(for: session.id) }?
                 .makeKeyAndOrderFront(nil)
@@ -129,7 +220,7 @@ final class Workspace {
 
     // MARK: - Closing
 
-    func close(_ session: RemoteSession) {
+    func close(_ session: WorkspaceSession) {
         session.close()
         if selectedTab == .session(session.id) {
             let tabs = tabbedSessions
@@ -154,7 +245,7 @@ final class Workspace {
     }
 
     var activeSessionCount: Int {
-        sessions.count { $0.phase.isActive || $0.phase.isInProgress }
+        sessions.count { $0.status.isActive || $0.status.isInProgress || $0.status.tone == .needsUser }
     }
 
     // MARK: - Tabs and windows

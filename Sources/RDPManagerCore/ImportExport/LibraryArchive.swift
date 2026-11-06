@@ -1,10 +1,14 @@
 import Foundation
 
 /// RDP Manager's own export format: folders, connections and credential profiles as JSON.
-/// Passwords are never part of it; an imported library asks for them on first connect.
+/// Passwords, key passphrases and keys are never part of it; an imported library asks for
+/// them on first connect. SSH key profiles carry the key's path, which may not exist on
+/// another Mac.
 public struct LibraryArchive: Codable, Equatable, Sendable {
     public static let formatIdentifier = "com.rdpmanager.library"
-    public static let currentFormatVersion = 1
+    /// 1: RDP only. 2: connections have a protocol and SSH settings (an older RDP Manager
+    /// would import SSH hosts as RDP, so it must refuse the file).
+    public static let currentFormatVersion = 2
 
     public var format: String
     public var formatVersion: Int
@@ -90,7 +94,9 @@ public struct LibraryArchive: Codable, Equatable, Sendable {
     /// Whoever wrote the file chose its settings, so nothing that lowers security or opens
     /// this Mac to a server comes along: Standard RDP Security, a shared folder, printers,
     /// smart cards, the microphone, USB devices and a KDC proxy are removed (they inherit
-    /// again) and listed in `removedSettings`. The user turns them back on in the editor.
+    /// again) and listed in `removedSettings`, as are SSH startup commands and directories,
+    /// agent forwarding, Kerberos delegation and sent environment variables. The user turns
+    /// them back on in the editor.
     public func inventoryForImport(under parentID: UUID?) -> Import {
         var folderMap: [UUID: UUID] = [:]
         var credentialMap: [UUID: UUID] = [:]
@@ -98,6 +104,17 @@ public struct LibraryArchive: Codable, Equatable, Sendable {
         for credential in credentials { credentialMap[credential.id] = UUID() }
 
         var removed: [String] = []
+        func remap(_ settings: SSHConnectionSettings, of name: String) -> SSHConnectionSettings {
+            var settings = settings
+            if case let .profile(id) = settings.secret {
+                settings.secret = credentialMap[id].map(SSHSecretSource.profile)
+            }
+            let stripped = settings.removingRiskyImports()
+            if stripped.removed.isEmpty == false {
+                removed.append("\(name): \(stripped.removed.joined(separator: ", "))")
+            }
+            return stripped.settings
+        }
         func remap(_ settings: ConnectionSettings, of name: String) -> ConnectionSettings {
             var settings = settings
             if case let .shared(id) = settings.credential {
@@ -115,6 +132,7 @@ public struct LibraryArchive: Codable, Equatable, Sendable {
             copy.id = folderMap[folder.id]!
             copy.parentID = folder.parentID.flatMap { folderMap[$0] } ?? parentID
             copy.defaults = remap(folder.defaults, of: folder.name)
+            copy.sshDefaults = remap(folder.sshDefaults, of: folder.name)
             return copy
         }
         let newConnections = connections.map { connection in
@@ -122,6 +140,7 @@ public struct LibraryArchive: Codable, Equatable, Sendable {
             copy.id = UUID()
             copy.folderID = connection.folderID.flatMap { folderMap[$0] } ?? parentID
             copy.settings = remap(connection.settings, of: connection.name)
+            copy.ssh = remap(connection.ssh, of: connection.name)
             copy.lastConnectedAt = nil
             return copy
         }

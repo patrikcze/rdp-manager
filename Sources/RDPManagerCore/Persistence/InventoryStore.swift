@@ -150,6 +150,49 @@ public final class InventoryStore {
         return .builtIn
     }
 
+    // MARK: - SSH settings inheritance
+
+    /// The SSH settings `connection` connects with: its own over its folders' SSH defaults
+    /// over the built-in defaults. RDP settings never take part.
+    public func resolvedSSHSettings(for connection: Connection) -> ResolvedSSHSettings {
+        ResolvedSSHSettings(effectiveSSHSettings(for: connection))
+    }
+
+    public func inheritedSSHSettings(forFolder folderID: UUID?) -> SSHConnectionSettings {
+        path(of: folderID).reduce(SSHConnectionSettings()) { inherited, folder in
+            folder.sshDefaults.overlaying(inherited)
+        }
+    }
+
+    public func effectiveSSHSettings(for connection: Connection) -> SSHConnectionSettings {
+        connection.ssh.overlaying(inheritedSSHSettings(forFolder: connection.folderID))
+    }
+
+    public func source(of key: SSHSettingKey, for connection: Connection) -> SettingSource {
+        if connection.ssh.has(key) {
+            return .connection
+        }
+        return inheritedSource(of: key, forFolder: connection.folderID)
+    }
+
+    public func inheritedSource(of key: SSHSettingKey, forFolder folderID: UUID?) -> SettingSource {
+        for folder in path(of: folderID).reversed() where folder.sshDefaults.has(key) {
+            return .folder(folder.id)
+        }
+        return .builtIn
+    }
+
+    /// The user an SSH connection signs in as, when the app knows it: its own or inherited
+    /// user, else its credential profile's. Empty when OpenSSH decides.
+    public func sshUsername(for connection: Connection) -> String {
+        let resolved = resolvedSSHSettings(for: connection)
+        if resolved.username.isEmpty == false { return resolved.username }
+        if case let .profile(id) = resolved.secret, let profile = credential(id), profile.kind.isSSH {
+            return profile.username
+        }
+        return ""
+    }
+
     // MARK: - Search
 
     /// Connections whose name, host, tags, notes, OS label or folder path match every word of
@@ -160,7 +203,8 @@ public final class InventoryStore {
             return []
         }
         return inventory.connections.filter { connection in
-            let haystack = ([connection.name, connection.host, connection.operatingSystemLabel, connection.notes]
+            let haystack = ([connection.name, connection.host, connection.operatingSystemLabel, connection.notes,
+                             connection.connectionProtocol.label, connection.ssh.username ?? "", connection.ssh.hostAlias ?? ""]
                 + connection.tags + path(of: connection.folderID).map(\.name))
                 .joined(separator: " ")
             return words.allSatisfy { haystack.range(of: $0, options: [.caseInsensitive, .diacriticInsensitive]) != nil }
@@ -401,25 +445,39 @@ public final class InventoryStore {
             for index in inventory.folders.indices where inventory.folders[index].defaults.credential == .shared(id) {
                 inventory.folders[index].defaults.credential = nil
             }
+            for index in inventory.connections.indices where inventory.connections[index].ssh.secret == .profile(id) {
+                inventory.connections[index].ssh.secret = nil
+            }
+            for index in inventory.folders.indices where inventory.folders[index].sshDefaults.secret == .profile(id) {
+                inventory.folders[index].sshDefaults.secret = nil
+            }
         }
     }
 
-    /// Folders and connections that name the profile directly.
+    /// Folders and connections that name the profile directly, for RDP or SSH.
     public func usages(ofCredential id: UUID) -> (folders: [Folder], connections: [Connection]) {
         (
-            inventory.folders.filter { $0.defaults.credential == .shared(id) },
-            inventory.connections.filter { $0.settings.credential == .shared(id) }
+            inventory.folders.filter { $0.defaults.credential == .shared(id) || $0.sshDefaults.secret == .profile(id) },
+            inventory.connections.filter { $0.settings.credential == .shared(id) || $0.ssh.secret == .profile(id) }
         )
     }
 
     /// Keychain accounts nothing in the inventory refers to any more.
     public func orphanedSecretAccounts(in accounts: [SecretAccount]) -> [SecretAccount] {
+        let referenced = Self.referencedSecretAccounts(in: inventory)
+        return accounts.filter { referenced($0) == false }
+    }
+
+    /// Whether the inventory can refer to an account: a profile's password or key
+    /// passphrase, or a connection's own RDP or SSH password. Built from a snapshot, so it
+    /// can run off the main actor while the Keychain is cleaned up.
+    public nonisolated static func referencedSecretAccounts(in inventory: Inventory) -> @Sendable (SecretAccount) -> Bool {
         let credentialIDs = Set(inventory.credentials.map(\.id))
         let connectionIDs = Set(inventory.connections.map(\.id))
-        return accounts.filter { account in
+        return { account in
             switch account {
-            case let .credential(id): credentialIDs.contains(id) == false
-            case let .connection(id): connectionIDs.contains(id) == false
+            case let .credential(id), let .sshKeyPassphrase(id): credentialIDs.contains(id)
+            case let .connection(id), let .sshPassword(id): connectionIDs.contains(id)
             }
         }
     }

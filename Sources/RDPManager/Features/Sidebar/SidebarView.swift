@@ -40,7 +40,8 @@ struct SidebarView: View {
             if let item = selection.first {
                 menu(for: item)
             } else {
-                Button("New Connection…") { model.newConnection(in: nil) }
+                Button("New RDP Connection…") { model.newConnection(in: nil) }
+                Button("New SSH Connection…") { model.newConnection(in: nil, protocol: .ssh) }
                 Button("New Group") { model.newFolder(in: nil) }
             }
         } primaryAction: { selection in
@@ -105,7 +106,7 @@ struct SidebarView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
-            let active = inventory.allConnections(under: folder.id).reduce(0) { $0 + model.workspace.sessions(for: $1.id).count { $0.phase.isActive } }
+            let active = inventory.allConnections(under: folder.id).reduce(0) { $0 + model.workspace.sessions(for: $1.id).count { $0.status.isActive } }
             if active > 0 {
                 Text("\(active)")
                     .font(.caption2.monospacedDigit().weight(.semibold))
@@ -123,7 +124,7 @@ struct SidebarView: View {
     private func connectionRow(_ connection: Connection) -> some View {
         let sessions = model.workspace.sessions(for: connection.id)
         return HStack(spacing: 7) {
-            HostIcon(color: connection.color, size: 13)
+            HostIcon(color: connection.color, size: 13, connectionProtocol: connection.connectionProtocol)
             if renaming == .connection(connection.id) {
                 renameField(for: .connection(connection.id))
             } else {
@@ -138,11 +139,11 @@ struct SidebarView: View {
                     .accessibilityLabel("Favorite")
             }
             if let session = sessions.first {
-                StatusDot(phase: session.phase)
+                StatusDot(status: session.status)
             }
         }
         .tag(SidebarSelection.connection(connection.id))
-        .help(connection.addressLabel)
+        .help("\(connection.connectionProtocol.label) — \(connection.addressLabel)")
         .draggable("connection:\(connection.id.uuidString)")
         .dropDestination(for: String.self) { items, _ in
             // Dropping on a host places the items before it in its group.
@@ -192,6 +193,7 @@ struct SidebarView: View {
                     NSPasteboard.general.setString(connection.addressLabel, forType: .string)
                 }
                 Button("Export as .rdp File…") { model.exportRDPFile(id) }
+                    .disabled(connection.isSSH)
                 Divider()
                 Button("Delete…", role: .destructive) { model.requestDelete(.connection(id)) }
             }
@@ -202,7 +204,8 @@ struct SidebarView: View {
                 }
                 .disabled(inventory.connections(in: id).isEmpty)
                 Divider()
-                Button("New Connection…") { model.newConnection(in: id) }
+                Button("New RDP Connection…") { model.newConnection(in: id) }
+                Button("New SSH Connection…") { model.newConnection(in: id, protocol: .ssh) }
                 Button("New Subgroup") { model.newFolder(in: id) }
                 Divider()
                 Button("Group Settings…") { model.editingFolder = folder }
@@ -234,10 +237,12 @@ struct SidebarView: View {
     private var footer: some View {
         HStack(spacing: 2) {
             Menu {
-                Button("New Connection…") { model.newConnection() }
+                Button("New RDP Connection…") { model.newConnection() }
+                Button("New SSH Connection…") { model.newConnection(protocol: .ssh) }
                 Button("New Group") { model.newFolder() }
                 Divider()
                 Button("Import .rdp Files…") { model.importRDPFiles() }
+                Button("Import Hosts from ~/.ssh/config…") { model.importSSHConfig() }
                 Button("Import Library…") { model.importLibrary() }
             } label: {
                 Image(systemName: "plus")

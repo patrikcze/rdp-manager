@@ -23,9 +23,11 @@ Live tests read credentials only from the environment. Never put them in files.
 | `RDPEngineIntegrationTests/FreeRDPEndMappingTests` | FreeRDP errors → re-prompt, sign-out, reconnect, Standard RDP refusal; PEM chains; wheel encoding; `DOMAIN\user` splitting |
 | `RDPEngineIntegrationTests/FreeRDPBridgeSafetyTests` | Real C bridge (no network): clipboard revocation forgets offered text, resize without a channel is refused, desktop size limits, overflow-safe frame sizes |
 | `RDPEngineIntegrationTests/CertificatePinTests` | A pinned certificate's replacement is refused as changed even when macOS trusts it; other hosts follow system trust; trust file is 0600/0700 |
+| `RDPManagerCoreTests/SSH*Tests` | SSH migration and inheritance, Keychain references, ssh argument safety, log and end mapping, askpass prompt policy, Quick Connect, `~/.ssh/config` import (see docs/SSH-TESTING.md) |
+| `RDPEngineIntegrationTests/SSHLocalServerTests` | Real OpenSSH sessions against a throwaway local sshd: host keys, key/agent/passphrase sign-in through askpass, resize, ProxyJump, timeouts, cancel, no leaks |
 | `RDPEngineIntegrationTests/LiveFreeRDPTests` | Opt-in: real FreeRDP bridge sign-in (Auto, NLA), pixels arrive, certificate callback runs, wrong password fails authentication |
 
-Last run (2026-11-05, macOS 27.2, Xcode 27.2, Swift 6.4.2, Apple Silicon): **69 automated tests passed**. The 3 live tests passed against a Windows 11 VM on 2026-11-04 and were not rerun after the security fixes.
+Last run (2026-11-07, macOS 27.2, Xcode 27.2, Swift 6.4.2, OpenSSH 10.5p1, Apple Silicon): **112 automated tests passed** (69 RDP and core tests from before SSH support, unchanged, plus 43 SSH tests). The 3 live tests passed against a Windows 11 VM on 2026-11-04 and were not rerun after the security fixes.
 
 ## Functional test matrix
 

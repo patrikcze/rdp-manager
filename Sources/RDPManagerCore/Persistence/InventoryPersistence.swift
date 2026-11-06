@@ -125,8 +125,10 @@ public enum InventoryMigrator {
         guard version <= Inventory.currentSchemaVersion else {
             throw InventoryMigrationError.newerSchema(version)
         }
-        // Version 1 is the first schema; later versions add their upgrade steps here, each
-        // decoding the old shape and returning the next.
+        // 1 → 2: connections gained a protocol and SSH settings, folders SSH defaults and
+        // credential profiles a kind. The models decode a version 1 file with the values
+        // every version 1 item had (RDP, no SSH settings, RDP passwords), so the upgrade is
+        // the decode itself; identifiers, references and history are kept as they are.
         var inventory = try decoder.decode(Inventory.self, from: data)
         inventory.schemaVersion = Inventory.currentSchemaVersion
         return inventory

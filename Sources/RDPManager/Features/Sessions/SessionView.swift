@@ -2,6 +2,19 @@ import AppKit
 import RDPManagerCore
 import SwiftUI
 
+/// A session of either protocol, edge to edge.
+struct WorkspaceSessionView: View {
+    let session: WorkspaceSession
+    var isVisible = true
+
+    var body: some View {
+        switch session {
+        case let .rdp(rdp): SessionView(session: rdp, isVisible: isVisible)
+        case let .ssh(ssh): SSHSessionView(session: ssh, isVisible: isVisible)
+        }
+    }
+}
+
 /// A session's remote desktop, edge to edge, with an overlay for every state that is not the
 /// live desktop: connecting, sign-in, certificate review, ended.
 struct SessionView: View {
@@ -11,7 +24,7 @@ struct SessionView: View {
     var body: some View {
         ZStack {
             Color.black
-            RemoteDesktopHost(session: session)
+            SurfaceHost(surface: session.surface)
                 .opacity(session.phase.isActive ? 1 : 0)
             if session.phase.isActive == false {
                 SessionOverlay(session: session)
@@ -37,10 +50,11 @@ struct SessionView: View {
     }
 }
 
-/// Hosts the session's AppKit canvas. The canvas belongs to the session, not this view, so
-/// a session moved to another window keeps its surface and its connection.
-struct RemoteDesktopHost: NSViewRepresentable {
-    let session: RemoteSession
+/// Hosts a session's AppKit surface (remote desktop canvas or terminal). The surface belongs
+/// to the session, not this view, so a session moved to another window keeps its surface,
+/// its screen and its connection.
+struct SurfaceHost: NSViewRepresentable {
+    let surface: NSView
 
     func makeNSView(context _: Context) -> NSView {
         let container = NSView()
@@ -49,7 +63,7 @@ struct RemoteDesktopHost: NSViewRepresentable {
     }
 
     func updateNSView(_ container: NSView, context _: Context) {
-        if session.surface.superview !== container {
+        if surface.superview !== container {
             attach(to: container)
         }
     }
@@ -61,7 +75,7 @@ struct RemoteDesktopHost: NSViewRepresentable {
     }
 
     private func attach(to container: NSView) {
-        let canvas = session.surface
+        let canvas = surface
         canvas.removeFromSuperview()
         canvas.frame = container.bounds
         canvas.autoresizingMask = [.width, .height]
@@ -101,7 +115,7 @@ private struct SessionOverlay: View {
     }
 }
 
-private struct CardHeader: View {
+struct CardHeader: View {
     let symbol: String
     let tint: Color
     let title: String
@@ -259,7 +273,7 @@ private struct CertificateCard: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    static func formatFingerprint(_ sha256: String?) -> String {
+    nonisolated static func formatFingerprint(_ sha256: String?) -> String {
         guard let sha256 else { return "Unavailable" }
         let hex = sha256.replacingOccurrences(of: ":", with: "").uppercased()
         var groups: [String] = []
@@ -286,13 +300,13 @@ private struct EndedCard: View {
         VStack(spacing: 20) {
             CardHeader(symbol: symbol, tint: end.kind == .failed ? .red : .secondary, title: end.title, subtitle: end.message)
             HStack(spacing: 12) {
-                Button("Close") { model.workspace.close(session) }
+                Button("Close") { model.workspace.close(.rdp(session)) }
                 Button("Reconnect") { session.connect() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
             }
             if session.connectionID == nil {
-                Button("Save as Connection…") { model.saveQuickConnect(session) }
+                Button("Save as Connection…") { model.saveQuickConnect(.rdp(session)) }
                     .buttonStyle(.link)
             }
         }
@@ -313,19 +327,19 @@ private struct EndedCard: View {
 /// A session in a window of its own. Closing the window puts the session back into the main
 /// window's tabs rather than disconnecting it.
 struct DetachedSessionWindow: View {
-    let session: RemoteSession
+    let session: WorkspaceSession
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        SessionView(session: session)
+        WorkspaceSessionView(session: session)
             .navigationTitle(session.title)
-            .navigationSubtitle(session.phase.shortLabel)
+            .navigationSubtitle(session.status.label)
             .toolbar {
                 ToolbarItemGroup {
                     Menu {
                         SessionMenuItems(model: model, session: session)
                     } label: {
-                        Label("Session", systemImage: "display")
+                        Label("Session", systemImage: session.connectionProtocol == .ssh ? "terminal" : "display")
                     }
                 }
             }

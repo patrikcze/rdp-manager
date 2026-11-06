@@ -11,6 +11,9 @@ Full license texts ship inside the app at `Contents/Resources/Licenses`.
 | [MIT Kerberos](https://web.mit.edu/kerberos/) | 1.22 (Homebrew) | MIT and BSD-style (see NOTICE) | FreeRDP Kerberos, bundled |
 | [libusb](https://libusb.info) | 1.0.30 (Homebrew) | LGPL-2.1-or-later | FreeRDP USB redirection, bundled as a separate replaceable dylib |
 | [cJSON](https://github.com/DaveGamble/cJSON) | 1.7 (Homebrew) | MIT | FreeRDP dependency, bundled |
+| [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) © 2019-2026 Miguel de Icaza and the xterm.js authors | 1.99.2 | MIT | Terminal emulator of SSH sessions (Swift package, compiled into the app) |
+| [swift-argument-parser](https://github.com/apple/swift-argument-parser), [swift-png](https://github.com/tayloraswift/swift-png), [h](https://github.com/rarestype/h) | resolved in Package.resolved | Apache-2.0 / MPL-2.0 per package | Declared by SwiftTerm's manifest; resolved at build time, not linked into the app |
+| OpenSSH | system (`/usr/bin/ssh`) | BSD | Part of macOS; used, not bundled |
 | [RDPeek](https://github.com/steelbrain/RDPeek) © 2026 Anees Iqbal | — | MIT | Reference; `RemoteDesktopCanvas.swift` adapted |
 
 libusb is LGPL: it's linked dynamically, and `Contents/Frameworks/libusb-1.0.0.dylib` can be replaced with a compatible build.

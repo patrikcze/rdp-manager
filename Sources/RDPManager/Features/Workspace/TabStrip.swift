@@ -22,32 +22,7 @@ struct TabStrip: View {
                 .keyboardShortcutHint("⌘0")
 
                 ForEach(workspace.tabbedSessions) { session in
-                    TabButton(
-                        isSelected: workspace.selectedTab == .session(session.id),
-                        action: { workspace.selectedTab = .session(session.id) },
-                        onClose: { workspace.close(session) }
-                    ) {
-                        StatusDot(phase: session.phase)
-                        Text(session.title)
-                            .lineLimit(1)
-                    }
-                    .help("\(session.hostLabel) — \(session.phase.shortLabel)")
-                    .draggable("tab:\(session.id.uuidString)")
-                    .dropDestination(for: String.self) { items, _ in
-                        guard let payload = items.first, payload.hasPrefix("tab:"),
-                              let id = UUID(uuidString: String(payload.dropFirst(4))), id != session.id
-                        else { return false }
-                        withAnimation(.snappy) { workspace.moveTab(id, before: session.id) }
-                        return true
-                    }
-                    .contextMenu {
-                        SessionControlMenuItems(session: session, showsShowSession: false)
-                        Divider()
-                        Button("Move to New Window") {
-                            workspace.markDetached(session.id)
-                            openWindow(id: "session", value: session.id)
-                        }
-                    }
+                    SessionTab(session: session)
                 }
             }
             .padding(.horizontal, 8)
@@ -55,6 +30,47 @@ struct TabStrip: View {
         }
         .frame(height: 36)
         .background(.bar)
+    }
+}
+
+/// One session's tab: protocol icon, live status, title; drag to reorder.
+private struct SessionTab: View {
+    let session: WorkspaceSession
+    @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        let workspace = model.workspace
+        TabButton(
+            isSelected: workspace.selectedTab == .session(session.id),
+            action: { workspace.selectedTab = .session(session.id) },
+            onClose: { workspace.close(session) }
+        ) {
+            StatusDot(status: session.status)
+            Image(systemName: session.symbol)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(session.connectionProtocol.label)
+            Text(session.title)
+                .lineLimit(1)
+        }
+        .help("\(session.connectionProtocol.label) — \(session.hostLabel) — \(session.status.label)")
+        .draggable("tab:\(session.id.uuidString)")
+        .dropDestination(for: String.self) { items, _ in
+            guard let payload = items.first, payload.hasPrefix("tab:"),
+                  let id = UUID(uuidString: String(payload.dropFirst(4))), id != session.id
+            else { return false }
+            withAnimation(.snappy) { workspace.moveTab(id, before: session.id) }
+            return true
+        }
+        .contextMenu {
+            SessionControlMenuItems(session: session, showsShowSession: false)
+            Divider()
+            Button("Move to New Window") {
+                workspace.markDetached(session.id)
+                openWindow(id: "session", value: session.id)
+            }
+        }
     }
 }
 

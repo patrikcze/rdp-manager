@@ -167,43 +167,69 @@ func confirmSignOut(_ session: RemoteSession) -> Bool {
     return alert.runModal() == .alertFirstButtonReturn
 }
 
-/// The Session menu, shared by the menu bar and the session toolbar's menu.
+/// The Session menu, shared by the menu bar and the session toolbar's menu. Windows actions
+/// for RDP sessions; copy, paste, find, font size, interrupt and scrollback for SSH sessions.
 struct SessionMenuItems: View {
     let model: AppModel
-    let session: RemoteSession?
+    let session: WorkspaceSession?
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        let status = session?.status
         Button("Reconnect") { session?.connect() }
             .keyboardShortcut("r", modifiers: [.command, .option])
-            .disabled(session == nil || session?.phase.isInProgress == true)
+            .disabled(session == nil || status?.isInProgress == true)
         Button("Disconnect") { session?.disconnect() }
             .keyboardShortcut("d", modifiers: [.command, .option])
-            .disabled(session.map { $0.phase.isActive || $0.phase.isInProgress } != true)
-        Button("Sign Out of Windows…") {
-            if let session, confirmSignOut(session) { session.signOut() }
+            .disabled(status.map { $0.isActive || $0.isInProgress || $0.tone == .needsUser } != true)
+        switch session {
+        case let .rdp(rdp)?:
+            Button("Sign Out of Windows…") {
+                if confirmSignOut(rdp) { rdp.signOut() }
+            }
+            .disabled(rdp.phase.isActive == false || rdp.isSigningOut)
+        case .ssh, nil:
+            EmptyView()
         }
-        .disabled(session?.phase.isActive != true || session?.isSigningOut == true)
         Button("Close Session") {
             if let session { model.workspace.close(session) }
         }
         .keyboardShortcut("w", modifiers: [.command, .option])
         .disabled(session == nil)
         Divider()
-        Menu("Send Keys") {
-            Button("Ctrl+Alt+Del") { session?.sendCtrlAltDelete() }
-            Button("Windows") { session?.sendWindowsKey(with: nil) }
-            Button("Win+R (Run)") { session?.sendWindowsKey(with: .r) }
-            Button("Win+E (Explorer)") { session?.sendWindowsKey(with: .e) }
-            Button("Win+L (Lock)") { session?.sendWindowsKey(with: .l) }
-            Button("Alt+Tab") { session?.sendAltTab() }
+        switch session {
+        case let .rdp(rdp)?:
+            Menu("Send Keys") {
+                Button("Ctrl+Alt+Del") { rdp.sendCtrlAltDelete() }
+                Button("Windows") { rdp.sendWindowsKey(with: nil) }
+                Button("Win+R (Run)") { rdp.sendWindowsKey(with: .r) }
+                Button("Win+E (Explorer)") { rdp.sendWindowsKey(with: .e) }
+                Button("Win+L (Lock)") { rdp.sendWindowsKey(with: .l) }
+                Button("Alt+Tab") { rdp.sendAltTab() }
+            }
+            .disabled(rdp.phase.isActive != true)
+            Toggle("Share Clipboard", isOn: Binding(
+                get: { rdp.clipboardEnabled },
+                set: { rdp.setClipboardEnabled($0) }
+            ))
+        case let .ssh(ssh)?:
+            Button("Copy") { ssh.copySelection() }
+            Button("Paste") { ssh.paste() }
+            Button("Find…") { ssh.find() }
+            Button("Clear Scrollback") { ssh.clearScrollback() }
+            Button("Send Interrupt (Ctrl-C)") { ssh.sendInterrupt() }
+                .disabled(ssh.phase != .connected)
+            Menu("Font Size") {
+                Button("Bigger") { ssh.changeFontSize(by: 1) }
+                    .keyboardShortcut("+", modifiers: [.command])
+                Button("Smaller") { ssh.changeFontSize(by: -1) }
+                    .keyboardShortcut("-", modifiers: [.command])
+                Button("Default Size") { ssh.changeFontSize(by: 0) }
+            }
+        case nil:
+            Menu("Send Keys") {}
+                .disabled(true)
         }
-        .disabled(session?.phase.isActive != true)
-        Toggle("Share Clipboard", isOn: Binding(
-            get: { session?.clipboardEnabled ?? false },
-            set: { session?.setClipboardEnabled($0) }
-        ))
-        .disabled(session == nil)
         Divider()
         Button("Move to New Window") {
             if let session {

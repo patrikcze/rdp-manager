@@ -115,19 +115,20 @@ struct MainWindow: View {
         Task { @MainActor in
             for _ in 0 ..< 50 {
                 try? await Task.sleep(for: .milliseconds(100))
-                if case .awaitingCredentials = session.phase {
-                    session.submitCredentials(username: user, domain: "", password: password, save: false)
+                if case let .rdp(rdp) = session, case .awaitingCredentials = rdp.phase {
+                    rdp.submitCredentials(username: user, domain: "", password: password, save: false)
                     break
                 }
             }
             // `-RunInSession <command>`: once the desktop shows, run it through Win+R.
             let arguments = ProcessInfo.processInfo.arguments
             guard let index = arguments.firstIndex(of: "-RunInSession"), index + 1 < arguments.count else { return }
-            for _ in 0 ..< 100 where session.phase.isActive == false {
+            guard case let .rdp(rdp) = session else { return }
+            for _ in 0 ..< 100 where rdp.phase.isActive == false {
                 try? await Task.sleep(for: .milliseconds(100))
             }
             try? await Task.sleep(for: .seconds(8)) // a fresh sign-in starts Explorer first
-            await session.runCommand(arguments[index + 1])
+            await rdp.runCommand(arguments[index + 1])
             // `-SimulateKeys "h i ctrl+a ctrl+c"`: then press keys as real macOS key events
             // through the window, so the app's own input path is tested.
             if let keys = arguments.firstIndex(of: "-SimulateKeys"), keys + 1 < arguments.count {
@@ -137,7 +138,7 @@ struct MainWindow: View {
         }
     }
 
-    /// `-Show inspector|editor|group|credentials` puts the window in a state for README
+    /// `-Show inspector|editor|group|credentials|ssh-inspector|ssh-editor` puts the window in a state for README
     /// screenshots (with `-SampleLibraryInMemory`). Debug builds only.
     private func showForScreenshot(_ scene: String) {
         let inventory = model.inventory
@@ -152,6 +153,11 @@ struct MainWindow: View {
             model.editingFolder = inventory.subfolders(of: nil).first
         case "credentials":
             model.sidebarSelection = .credentials
+        case "ssh-inspector":
+            if let ssh = inventory.connections.first(where: \.isSSH) { model.sidebarSelection = .connection(ssh.id) }
+            model.isInspectorPresented = true
+        case "ssh-editor":
+            if let ssh = inventory.connections.first(where: \.isSSH) { model.edit(ssh.id) }
         default:
             break
         }
@@ -190,10 +196,12 @@ struct MainToolbar: ToolbarContent {
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Menu {
-                Button("New Connection…") { model.newConnection() }
+                Button("New RDP Connection…") { model.newConnection() }
+                Button("New SSH Connection…") { model.newConnection(protocol: .ssh) }
                 Button("New Group") { model.newFolder() }
                 Divider()
                 Button("Import .rdp Files…") { model.importRDPFiles() }
+                Button("Import Hosts from ~/.ssh/config…") { model.importSSHConfig() }
             } label: {
                 Label("Add", systemImage: "plus")
             }
@@ -203,7 +211,7 @@ struct MainToolbar: ToolbarContent {
                 Menu {
                     SessionMenuItems(model: model, session: session)
                 } label: {
-                    Label("Session", systemImage: "display")
+                    Label("Session", systemImage: session.connectionProtocol == .ssh ? "terminal" : "display")
                 }
                 .help("Session actions")
             }
@@ -247,7 +255,7 @@ struct WorkspaceView: View {
                     .allowsHitTesting(workspace.selectedTab == .overview)
                 ForEach(workspace.tabbedSessions) { session in
                     let isSelected = workspace.selectedTab == .session(session.id)
-                    SessionView(session: session, isVisible: isSelected)
+                    WorkspaceSessionView(session: session, isVisible: isSelected)
                         .opacity(isSelected ? 1 : 0)
                         .allowsHitTesting(isSelected)
                         .accessibilityHidden(isSelected == false)
