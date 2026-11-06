@@ -7,12 +7,204 @@ struct InspectorView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        if let session = model.workspace.selectedSession {
+        switch model.workspace.selectedSession {
+        case let .rdp(session)?:
             SessionInspector(session: session)
-        } else if case let .connection(id) = model.sidebarSelection, let connection = model.inventory.connection(id) {
-            ConnectionInspector(connection: connection)
-        } else {
+        case let .ssh(session)?:
+            SSHSessionInspector(session: session)
+        case nil:
+            if case let .connection(id) = model.sidebarSelection, let connection = model.inventory.connection(id) {
+                if connection.isSSH {
+                    SSHConnectionInspector(connection: connection)
+                } else {
+                    ConnectionInspector(connection: connection)
+                }
+            } else {
+                noSelection
+            }
+        }
+    }
+
+    private var noSelection: some View {
+        Group {
             ContentUnavailableView("No Selection", systemImage: "sidebar.trailing", description: Text("Select a connection or a session."))
+        }
+    }
+}
+
+/// An SSH session: only what OpenSSH reported (host key, method, KEX and cipher from its own
+/// log), nothing estimated.
+private struct SSHSessionInspector: View {
+    let session: SSHSession
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Status") {
+                    HStack(spacing: 5) {
+                        StatusDot(status: session.status)
+                        Text(session.status.label)
+                    }
+                }
+                LabeledContent("Host", value: session.hostLabel)
+                LabeledContent("User", value: session.target.username.isEmpty ? "From OpenSSH config" : session.target.username)
+                if let since = session.connectedAt {
+                    LabeledContent("Connected") {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            Text(Duration.since(since, now: context.date))
+                                .monospacedDigit()
+                        }
+                    }
+                }
+                LabeledContent("Reconnects", value: "\(session.reconnectCount)")
+                if let title = session.remoteTitle {
+                    LabeledContent("Terminal title", value: title)
+                }
+            } header: {
+                Text(session.title)
+            }
+            Section("Security") {
+                LabeledContent("Signed in with", value: session.authenticationMethod.map(Self.methodLabel) ?? "—")
+                LabeledContent("Host key", value: session.hostKeyVerified ? "Verified (known_hosts)" : (session.serverHostKey == nil ? "—" : "Not verified yet"))
+                if let key = session.serverHostKey {
+                    LabeledContent("Key type", value: key.type)
+                    Text(key.fingerprint)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                LabeledContent("Key exchange", value: session.keyExchange ?? "—")
+                LabeledContent("Cipher", value: session.cipher ?? "—")
+                if let software = session.remoteSoftware {
+                    LabeledContent("Server", value: software)
+                }
+            }
+            Section("Effective Settings") {
+                let settings = session.settings
+                LabeledContent("Authentication", value: settings.authentication.label)
+                if let key = session.target.identityFile {
+                    LabeledContent("Key file", value: key)
+                }
+                if let jump = settings.proxyJump {
+                    LabeledContent("Jump hosts", value: jump)
+                }
+                LabeledContent("Agent forwarding", value: settings.forwardAgent ? "On" : "Off")
+                LabeledContent("Keepalive", value: settings.serverAliveIntervalSeconds == 0 ? "Off" : "Every \(settings.serverAliveIntervalSeconds) s")
+                LabeledContent("TERM", value: settings.terminalType)
+            }
+            Section {
+                HStack {
+                    Button("Reconnect") { session.connect() }
+                    Button("Disconnect") { session.disconnect() }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    static func methodLabel(_ method: String) -> String {
+        switch method {
+        case "publickey": "Public key"
+        case "password": "Password"
+        case "keyboard-interactive": "Keyboard-interactive"
+        case "gssapi-with-mic": "Kerberos (GSSAPI)"
+        case "hostbased": "Host-based"
+        default: method
+        }
+    }
+}
+
+/// A saved SSH host and its effective settings, with where each comes from.
+private struct SSHConnectionInspector: View {
+    let connection: Connection
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let inventory = model.inventory
+        let resolved = inventory.resolvedSSHSettings(for: connection)
+        Form {
+            Section {
+                LabeledContent("Address", value: connection.addressLabel)
+                LabeledContent("Protocol", value: "SSH")
+                LabeledContent("Group", value: inventory.path(of: connection.folderID).map(\.name).joined(separator: " › ").nonEmpty ?? "—")
+                if connection.operatingSystemLabel.isEmpty == false {
+                    LabeledContent("OS", value: connection.operatingSystemLabel)
+                }
+                if connection.tags.isEmpty == false {
+                    LabeledContent("Tags") {
+                        HStack { ForEach(connection.tags, id: \.self) { TagChip(text: $0) } }
+                    }
+                }
+                LabeledContent("Last connected") {
+                    if let date = connection.lastConnectedAt {
+                        Text(date, format: .dateTime)
+                    } else {
+                        Text("Never")
+                    }
+                }
+            } header: {
+                Text(connection.name)
+            }
+            Section("Effective Settings") {
+                setting("User", inventory.sshUsername(for: connection).nonEmpty ?? "From OpenSSH config", .username)
+                setting("Authentication", resolved.authentication.label, .authentication)
+                setting("Saved secret", secretLabel(resolved.secret), .secret)
+                if let key = resolved.identityFile {
+                    setting("Key file", key, .identityFile)
+                }
+                if let jump = resolved.proxyJump {
+                    setting("Jump hosts", jump, .proxyJump)
+                }
+                setting("Agent forwarding", resolved.forwardAgent ? "On" : "Off", .forwardAgent)
+                if resolved.forwardAgent {
+                    Label("The server can use your SSH agent's keys while connected.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                setting("Auto-reconnect", resolved.autoReconnect ? "On" : "Off", .autoReconnect)
+            }
+            if connection.notes.isEmpty == false {
+                Section("Notes") {
+                    Text(connection.notes)
+                        .textSelection(.enabled)
+                }
+            }
+            Section {
+                HStack {
+                    Button("Connect") { model.connect(connection.id) }
+                        .buttonStyle(.borderedProminent)
+                    Button("Edit…") { model.edit(connection.id) }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func secretLabel(_ secret: SSHSecretSource) -> String {
+        switch secret {
+        case .none: "None (asked when needed)"
+        case .connectionSecret: "This connection's password"
+        case let .profile(id): model.inventory.credential(id)?.name ?? "Missing credential"
+        }
+    }
+
+    private func setting(_ title: String, _ value: String, _ key: SSHSettingKey) -> some View {
+        LabeledContent(title) {
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(value)
+                Text(sourceLabel(model.inventory.source(of: key, for: connection)))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func sourceLabel(_ source: SettingSource) -> String {
+        switch source {
+        case .connection: "This connection"
+        case let .folder(id): "From \(model.inventory.folder(id)?.name ?? "group")"
+        case .builtIn: "Default"
         }
     }
 }

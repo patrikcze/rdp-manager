@@ -50,7 +50,7 @@ struct OverviewView: View {
                 connection: connection,
                 path: inventory.path(of: connection.folderID).map(\.name).joined(separator: " › "),
                 identity: identityLabel(for: connection),
-                phase: model.workspace.sessions(for: connection.id).first?.phase
+                status: model.workspace.sessions(for: connection.id).first?.status
             )
             let haystack = "\(row.name) \(row.address) \(row.path) \(row.os) \(connection.tags.joined(separator: " "))"
             return words.allSatisfy({ haystack.localizedCaseInsensitiveContains($0) }) ? row : nil
@@ -59,7 +59,11 @@ struct OverviewView: View {
     }
 
     private func identityLabel(for connection: Connection) -> String {
-        switch model.inventory.resolvedSettings(for: connection).credential {
+        if connection.isSSH {
+            let user = model.inventory.sshUsername(for: connection)
+            return user.isEmpty ? "OpenSSH config" : user
+        }
+        return switch model.inventory.resolvedSettings(for: connection).credential {
         case let .shared(id): model.inventory.credential(id).map { "\($0.name) (\($0.identityLabel))" } ?? "Missing credential"
         case let .direct(username, domain): domain.isEmpty ? username : "\(domain)\\\(username)"
         case .prompt: "Ask"
@@ -103,7 +107,7 @@ struct OverviewView: View {
         Table(rows, selection: $selection, sortOrder: $sortOrder) {
             TableColumn("Name", value: \.name, comparator: .localizedStandard) { row in
                 HStack(spacing: 8) {
-                    HostIcon(color: row.connection.color)
+                    HostIcon(color: row.connection.color, connectionProtocol: row.connection.connectionProtocol)
                     Text(row.name)
                         .fontWeight(.medium)
                     if row.connection.isFavorite {
@@ -114,11 +118,16 @@ struct OverviewView: View {
                 }
             }
             .width(min: 140, ideal: 200)
+            TableColumn("Protocol", value: \.protocolLabel) { row in
+                Label(row.protocolLabel, systemImage: row.connection.connectionProtocol.symbol)
+                    .foregroundStyle(.secondary)
+            }
+            .width(min: 60, ideal: 70)
             TableColumn("Status", value: \.statusSortKey) { row in
-                if let phase = row.phase {
+                if let status = row.status {
                     HStack(spacing: 5) {
-                        StatusDot(phase: phase)
-                        Text(phase.shortLabel)
+                        StatusDot(status: status)
+                        Text(status.label)
                     }
                 } else {
                     Text("—").foregroundStyle(.tertiary)
@@ -170,6 +179,7 @@ struct OverviewView: View {
                         model.inventory.toggleFavorite(id)
                     }
                     Button("Export as .rdp File…") { model.exportRDPFile(id) }
+                        .disabled(model.inventory.connection(id)?.isSSH == true)
                 }
                 Divider()
                 Button("Delete…", role: .destructive) {
@@ -198,11 +208,12 @@ struct OverviewView: View {
         ContentUnavailableView {
             Label("Your Connection Library Is Empty", systemImage: "rectangle.connected.to.line.below")
         } description: {
-            Text("Add the Windows computers you manage, organize them into groups, or connect right away with Quick Connect in the toolbar.")
+            Text("Add the Windows and SSH hosts you manage, organize them into groups, or connect right away with Quick Connect in the toolbar.")
         } actions: {
             HStack {
-                Button("New Connection…") { model.newConnection() }
+                Button("New RDP Connection…") { model.newConnection() }
                     .buttonStyle(.borderedProminent)
+                Button("New SSH Connection…") { model.newConnection(protocol: .ssh) }
                 Button("Import .rdp Files…") { model.importRDPFiles() }
                 Button("Add Sample Library") { model.loadSampleLibrary() }
             }
@@ -215,17 +226,18 @@ struct OverviewRow: Identifiable {
     let connection: Connection
     let path: String
     let identity: String
-    let phase: SessionPhase?
+    let status: SessionStatus?
 
     var id: UUID { connection.id }
     var name: String { connection.name }
     var address: String { connection.addressLabel }
     var os: String { connection.operatingSystemLabel }
+    var protocolLabel: String { connection.connectionProtocol.label }
     var lastConnectedSortKey: Date { connection.lastConnectedAt ?? .distantPast }
     var statusSortKey: Int {
-        switch phase {
-        case .connected?: 0
-        case let phase? where phase.isInProgress: 1
+        switch status {
+        case let status? where status.isActive: 0
+        case let status? where status.isInProgress: 1
         case .some: 2
         case nil: 3
         }

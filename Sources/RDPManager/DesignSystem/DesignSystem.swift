@@ -73,21 +73,42 @@ extension SessionPhase {
     }
 }
 
-/// A small dot showing a session's actual state: green only while the desktop shows.
+extension SessionStatus {
+    var tint: Color {
+        switch tone {
+        case .connected: .green
+        case .inProgress: .orange
+        case .needsUser: .yellow
+        case .failed: .red
+        case .ended, .idle: .secondary
+        }
+    }
+}
+
+/// A small dot showing a session's actual state: green only while the desktop or terminal is
+/// live, whatever the protocol.
 struct StatusDot: View {
-    let phase: SessionPhase
+    let status: SessionStatus
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
 
+    init(status: SessionStatus) {
+        self.status = status
+    }
+
+    init(phase: SessionPhase) {
+        status = phase.status
+    }
+
     var body: some View {
         Circle()
-            .fill(phase.tint)
+            .fill(status.tint)
             .frame(width: 7, height: 7)
-            .opacity(phase.isInProgress && reduceMotion == false ? (pulse ? 0.35 : 1) : 1)
-            .animation(phase.isInProgress && reduceMotion == false
+            .opacity(status.isInProgress && reduceMotion == false ? (pulse ? 0.35 : 1) : 1)
+            .animation(status.isInProgress && reduceMotion == false
                 ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default, value: pulse)
             .onAppear { pulse = true }
-            .accessibilityLabel(phase.shortLabel)
+            .accessibilityLabel(status.label)
     }
 }
 
@@ -97,6 +118,7 @@ struct StatusDot: View {
 struct HostIcon: View {
     var color: TagColor?
     var size: CGFloat = 15
+    var connectionProtocol: ConnectionProtocol = .rdp
 
     var body: some View {
         let fill = color?.color ?? .accentColor
@@ -104,15 +126,15 @@ struct HostIcon: View {
             .fill(fill.gradient)
             .frame(width: size + 3, height: size + 3)
             .overlay {
-                Image(systemName: "desktopcomputer")
-                    .font(.system(size: size * 0.62, weight: .semibold))
+                Image(systemName: connectionProtocol == .ssh ? "apple.terminal" : "desktopcomputer")
+                    .font(.system(size: size * (connectionProtocol == .ssh ? 0.58 : 0.62), weight: .semibold))
                     .foregroundStyle(.white)
             }
             .overlay {
                 RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
                     .strokeBorder(.black.opacity(0.12), lineWidth: 0.5)
             }
-            .accessibilityHidden(true)
+            .accessibilityLabel(connectionProtocol.label)
     }
 }
 
