@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-11-07)
 - **SSH terminals.** SSH hosts live in the same groups as RDP hosts and open in the same tabs and windows, in an in-app terminal (SwiftTerm 1.99.2) running the macOS OpenSSH client on a PTY. Sign-in follows `~/.ssh/config`: agent, key files, OpenSSH certificates, passwords, keyboard-interactive, GSSAPI and ProxyJump. The session's state comes from OpenSSH's own log, so "Connected" means the shell is live.
 - **Askpass.** Every OpenSSH prompt goes through a small bundled helper to the session that started ssh. Saved passwords and key passphrases are offered only for prompts that name that session's user and host or key, once per attempt; everything else is asked.
 - **Host keys.** Unknown keys are shown with their fingerprint before anything is sent; changed keys stop the connection before sign-in. OpenSSH's `known_hosts` is the trust store.
