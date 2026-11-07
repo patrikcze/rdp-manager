@@ -330,8 +330,10 @@ public struct EngineChoice: Equatable, Sendable {
     public var kind: RDPEngineKind
     /// The settings that need FreeRDP, in words; empty when RDPKit runs or FreeRDP was chosen.
     public var freeRDPReasons: [String]
+    private var authentication: AuthenticationMode
 
     public init(for settings: ResolvedSettings) {
+        authentication = settings.authentication
         var reasons: [String] = []
         if settings.security == .standardRDP { reasons.append("Standard RDP Security") }
         if settings.authentication != .ntlm { reasons.append("Kerberos") }
@@ -350,6 +352,38 @@ public struct EngineChoice: Equatable, Sendable {
     /// Settings that the chosen engine cannot honour (RDPKit forced despite FreeRDP-only needs).
     public var ignoredSettings: [String] {
         kind == .rdpKit ? freeRDPReasons : []
+    }
+
+    /// Why this session must not start at all. "Kerberos only" is a promise never to sign in
+    /// with NTLM; RDPKit has no Kerberos and would sign in with NTLM, so it doesn't connect.
+    public var refusal: String? {
+        guard kind == .rdpKit, authentication == .kerberosOnly else { return nil }
+        return "Kerberos only needs the FreeRDP engine: RDPKit has no Kerberos and would sign in with NTLM. Set the engine to Automatic or FreeRDP, or allow NTLM fallback."
+    }
+
+    /// What the session tells the user about settings RDPKit can't honour, in plain words.
+    public var notice: String? {
+        guard refusal == nil, ignoredSettings.isEmpty == false else { return nil }
+        var parts: [String] = []
+        if ignoredSettings.contains("Kerberos") {
+            parts.append("RDPKit has no Kerberos, so this session signs in with NTLM.")
+        }
+        let others = ignoredSettings.filter { $0 != "Kerberos" }
+        if others.isEmpty == false {
+            parts.append("RDPKit doesn't support \(others.joined(separator: ", ")); they are off in this session.")
+        }
+        parts.append("Set the engine to Automatic or FreeRDP to use \(ignoredSettings.count == 1 ? "it" : "them").")
+        return parts.joined(separator: " ")
+    }
+}
+
+/// Advice for a refused Kerberos-only sign-in. Kerberos asks for a ticket for the server's
+/// name (TERMSRV/name), and a domain has none for an IP address, so the attempt is refused
+/// even with the right password.
+public enum KerberosAdvice {
+    public static func signInMessage(_ message: String?, authentication: AuthenticationMode, address: HostAddress) -> String? {
+        guard authentication == .kerberosOnly, address.isIPAddress else { return message }
+        return "Kerberos can't sign in to an IP address. Use the server's DNS name (for example server.example.com) as the host, or allow NTLM fallback."
     }
 }
 
