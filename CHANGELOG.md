@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2 (2026-11-07)
+- **"Kerberos only" never signs in with NTLM.** With the engine set to RDPKit, which has no Kerberos, a Kerberos-only connection signed in with NTLM and only showed a notice. It now doesn't connect and explains that Kerberos only needs the FreeRDP engine; nothing is sent to the server. The editor's engine summary says so too.
+- **Honest RDPKit notice.** With Kerberos (NTLM fallback) on RDPKit, the notice now says the session signs in with NTLM, instead of "can't redirect Kerberos".
+- **Kerberos only to an IP address** now explains that Kerberos needs the server's DNS name, instead of "The user name or password is incorrect".
+- Kerberos and Windows Server 2025 verified against a test domain; see TESTING.md.
+
 ## 0.4.1 (2026-11-07)
 - **SSH disconnect broke the window.** After an SSH session ended, the window's content grew taller than the window: the tab strip slid under the toolbar and the Disconnected bar with Reconnect went off the bottom. The session cards and bars are now overlays, which can't change the layout.
 - **Host key question sometimes failed before you were asked.** The askpass connection was read without waiting, so if the helper had connected but not yet sent its question, the app hung up and OpenSSH reported "Host key verification failed". Reads now wait for the question, up to 5 seconds.

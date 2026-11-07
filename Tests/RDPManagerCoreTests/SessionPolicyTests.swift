@@ -111,6 +111,47 @@ struct EngineChoiceTests {
         #expect(ResolvedSettings(ConnectionSettings(engine: .freeRDP)).engine.kind == .freeRDP)
     }
 
+    /// Live finding (Windows Server 2025, 2026-11-07): RDPKit with "Kerberos only" signed in
+    /// with NTLM. Kerberos only must never start RDPKit.
+    @Test func kerberosOnlyNeverRunsOnRDPKit() {
+        let refused = ResolvedSettings(ConnectionSettings(authentication: .kerberosOnly, engine: .rdpKit)).engine
+        #expect(refused.kind == .rdpKit)
+        #expect(refused.refusal?.contains("FreeRDP") == true)
+        #expect(refused.notice == nil)
+        for engine in [EnginePreference.automatic, .freeRDP] {
+            let choice = ResolvedSettings(ConnectionSettings(authentication: .kerberosOnly, engine: engine)).engine
+            #expect(choice.kind == .freeRDP)
+            #expect(choice.refusal == nil)
+        }
+        // A group's Kerberos-only reaches its hosts too.
+        let inherited = ResolvedSettings(ConnectionSettings(engine: .rdpKit), defaults: ResolvedSettings(ConnectionSettings(authentication: .kerberosOnly)))
+        #expect(inherited.engine.refusal != nil)
+    }
+
+    @Test func rdpKitNoticeSaysNTLMIsUsedForKerberosWithFallback() {
+        let choice = ResolvedSettings(ConnectionSettings(authentication: .kerberos, engine: .rdpKit)).engine
+        #expect(choice.refusal == nil)
+        #expect(choice.notice?.contains("signs in with NTLM") == true)
+        #expect(choice.notice?.contains("redirect") == false)
+        let cards = ResolvedSettings(ConnectionSettings(smartCardsEnabled: true, engine: .rdpKit)).engine
+        #expect(cards.notice?.contains("doesn't support smart cards") == true)
+        #expect(ResolvedSettings.builtIn.engine.notice == nil)
+    }
+
+    /// Live finding: Kerberos only to an IP address was refused as "user name or password is
+    /// incorrect", although the password was right.
+    @Test func kerberosOnlyToAnIPAddressExplainsWhy() {
+        let wrong = "The user name or password is incorrect."
+        for host in ["172.31.32.15", "fe80::1"] {
+            let message = KerberosAdvice.signInMessage(wrong, authentication: .kerberosOnly, address: HostAddress(host: host))
+            #expect(message?.contains("DNS name") == true)
+        }
+        #expect(KerberosAdvice.signInMessage(wrong, authentication: .kerberosOnly, address: HostAddress(host: "dcmember1.cistest.io")) == wrong)
+        #expect(KerberosAdvice.signInMessage(wrong, authentication: .kerberos, address: HostAddress(host: "172.31.32.15")) == wrong)
+        #expect(HostAddress(host: "10.0.0.1").isIPAddress)
+        #expect(HostAddress(host: "server01").isIPAddress == false)
+    }
+
     @Test func groupsCanTurnOnRedirectionForEveryHost() {
         let group = ConnectionSettings(smartCardsEnabled: true)
         let host = ConnectionSettings(printersEnabled: false).overlaying(group)

@@ -11,6 +11,13 @@ public struct HostAddress: Equatable, Sendable {
         self.port = port
     }
 
+    /// Whether the host is an IPv4 or IPv6 address rather than a name.
+    public var isIPAddress: Bool {
+        var v4 = in_addr()
+        var v6 = in6_addr()
+        return inet_pton(AF_INET, host, &v4) == 1 || inet_pton(AF_INET6, host, &v6) == 1
+    }
+
     public enum ParseError: Error, Equatable, LocalizedError {
         case empty
         case invalidPort(String)

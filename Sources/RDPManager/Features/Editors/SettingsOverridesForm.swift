@@ -131,6 +131,7 @@ struct SettingsOverridesSections: View {
         let choice = resolved.engine
         switch choice.kind {
         case .rdpKit:
+            if choice.refusal != nil { return "RDPKit — won't connect: Kerberos only needs FreeRDP" }
             return choice.ignoredSettings.isEmpty ? "RDPKit" : "RDPKit (ignores \(choice.ignoredSettings.joined(separator: ", ")))"
         case .freeRDP:
             return choice.freeRDPReasons.isEmpty ? "FreeRDP" : "FreeRDP, for \(choice.freeRDPReasons.joined(separator: ", "))"

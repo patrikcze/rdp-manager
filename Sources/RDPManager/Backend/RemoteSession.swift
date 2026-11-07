@@ -126,9 +126,13 @@ final class RemoteSession: Identifiable {
             }
             standardRDPConfirmed = true
         }
-        lastNotice = engineChoice.ignoredSettings.isEmpty
-            ? nil
-            : "RDPKit can't redirect \(engineChoice.ignoredSettings.joined(separator: ", ")). Set the engine to Automatic or FreeRDP."
+        if let refusal = engineChoice.refusal {
+            // Nothing is read from the Keychain and nothing is sent to the server.
+            lastNotice = nil
+            phase = .ended(SessionEnd(kind: .failed, category: .unsupported, title: "Kerberos Only Needs FreeRDP", message: refusal))
+            return
+        }
+        lastNotice = engineChoice.notice
         if password.isEmpty == false || didAskForCredentials {
             startAttempt()
             return
@@ -412,7 +416,11 @@ extension RemoteSession: SessionEngineDelegate {
             case let .keychain(_, _, account): account
             case let .prompt(_, _, account): account
             }
-            askForCredentials(username: username, domain: domain, message: message, saveTo: saveTo)
+            askForCredentials(
+                username: username, domain: domain,
+                message: KerberosAdvice.signInMessage(message, authentication: settings.authentication, address: address),
+                saveTo: saveTo
+            )
         case let .end(end):
             if end.category == .authentication {
                 password = ""
