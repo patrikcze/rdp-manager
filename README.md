@@ -36,7 +36,7 @@ The app picks the engine per connection. SSH sessions run the macOS OpenSSH clie
 - **Tabbed sessions:** many concurrent sessions, with state shown in the tabs. Tabs can be reordered, moved to their own window, and shown in focus mode or full screen.
 - **Remote desktop:** the resolution follows the window at Retina scale, with H.264/AVC444 decoded by VideoToolbox. Your Mac keyboard layout is announced to Windows, ⌘ acts as the Windows key, and Ctrl+Alt+Del and other keys can be sent from a menu. Clipboard text and files work in both directions, and remote audio can play on the Mac.
 - **Enterprise:**
-  - Kerberos (with NTLM fallback or Kerberos only, plus an optional KDC proxy).
+  - Kerberos on the FreeRDP engine (with NTLM fallback or Kerberos only, plus an optional KDC proxy). See [docs/KERBEROS.md](docs/KERBEROS.md).
   - Opt-in Standard RDP Security for legacy servers.
   - Printer redirection (every Mac printer).
   - Smart card and YubiKey redirection (PC/SC).
@@ -57,7 +57,7 @@ open "build/RDP Manager.app"
 Or open `Package.swift` in Xcode and run the `RDPManager` scheme. See [BUILDING.md](BUILDING.md).
 
 ## Status
-Version 0.4.1, with fixes for SSH disconnect and the host key prompt. Verified against Windows 11 on both engines: NLA sign-in, rendering, printer redirection and the shared certificate trust. SSH key, agent and encrypted-key sign-in, host-key checks, resize and ProxyJump are verified against a local OpenSSH server; password sign-in against a real server isn't yet (see [docs/SSH-TESTING.md](docs/SSH-TESTING.md)). 114 automated tests pass; live sign-in tests passed before the 0.3.0 security fixes and haven't been rerun since. Kerberos, YubiKey/USB and microphone redirection aren't verified live yet, and serial ports are unsupported on macOS. See [TESTING.md](TESTING.md) and [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md).
+Version 0.4.2. Verified against Windows 11 on both engines: NLA sign-in, rendering, printer redirection and the shared certificate trust. Verified against a Windows Server 2025 domain: Kerberos sign-in, desktop, resize, clipboard and sign-out on FreeRDP. SSH key, agent and encrypted-key sign-in, host-key checks, resize and ProxyJump are verified against a local OpenSSH server; password sign-in against a real server isn't yet (see [docs/SSH-TESTING.md](docs/SSH-TESTING.md)). 117 automated tests pass; the automated live sign-in tests passed before the 0.3.0 security fixes and haven't been rerun since. The KDC proxy, YubiKey/USB and microphone redirection aren't verified live yet, and serial ports are unsupported on macOS. See [TESTING.md](TESTING.md) and [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md).
 
 ## Documentation
-[Architecture](ARCHITECTURE.md) · [Design](DESIGN.md) · [Backend decision](RDP-BACKEND-DECISION.md) · [Security](SECURITY.md) · [SSH security](docs/SSH-SECURITY.md) · [Testing](TESTING.md) · [SSH testing](docs/SSH-TESTING.md) · [SSH plan](docs/SSH-IMPLEMENTATION-PLAN.md) · [Building](BUILDING.md) · [Limitations](KNOWN-LIMITATIONS.md) · [Plan](IMPLEMENTATION-PLAN.md) · [Changelog](CHANGELOG.md) · [Third-party notices](THIRD-PARTY-NOTICES.md)
+[Architecture](ARCHITECTURE.md) · [Design](DESIGN.md) · [Backend decision](RDP-BACKEND-DECISION.md) · [Security](SECURITY.md) · [SSH security](docs/SSH-SECURITY.md) · [Testing](TESTING.md) · [Kerberos](docs/KERBEROS.md) · [SSH testing](docs/SSH-TESTING.md) · [SSH plan](docs/SSH-IMPLEMENTATION-PLAN.md) · [Building](BUILDING.md) · [Limitations](KNOWN-LIMITATIONS.md) · [Plan](IMPLEMENTATION-PLAN.md) · [Changelog](CHANGELOG.md) · [Third-party notices](THIRD-PARTY-NOTICES.md)
