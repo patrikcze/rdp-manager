@@ -1,6 +1,6 @@
 # Known Limitations
 
-Status as of 0.4.0. "Not verified live" means the code path exists and builds, but hasn't been exercised against a real server. See TESTING.md.
+Status as of 0.4.1. "Not verified live" means the code path exists and builds, but hasn't been exercised against a real server. See TESTING.md.
 
 ## Not supported
 - **Serial port redirection.** FreeRDP disables it on macOS (its serial layer uses Linux-only ioctls). A macOS port is planned. See RDP-BACKEND-DECISION.md.

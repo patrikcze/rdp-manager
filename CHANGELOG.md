@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 (2026-11-07)
 - **SSH disconnect broke the window.** After an SSH session ended, the window's content grew taller than the window: the tab strip slid under the toolbar and the Disconnected bar with Reconnect went off the bottom. The session cards and bars are now overlays, which can't change the layout.
 - **Host key question sometimes failed before you were asked.** The askpass connection was read without waiting, so if the helper had connected but not yet sent its question, the app hung up and OpenSSH reported "Host key verification failed". Reads now wait for the question, up to 5 seconds.
 
