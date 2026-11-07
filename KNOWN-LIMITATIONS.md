@@ -1,6 +1,6 @@
 # Known Limitations
 
-Status as of 0.4.1. "Not verified live" means the code path exists and builds, but hasn't been exercised against a real server. See TESTING.md.
+Status as of 0.4.2. "Not verified live" means the code path exists and builds, but hasn't been exercised against a real server. See TESTING.md.
 
 ## Not supported
 - **Serial port redirection.** FreeRDP disables it on macOS (its serial layer uses Linux-only ioctls). A macOS port is planned. See RDP-BACKEND-DECISION.md.
@@ -8,6 +8,8 @@ Status as of 0.4.1. "Not verified live" means the code path exists and builds, b
 - **Entra ID (AAD) sign-in.** FreeRDP supports it, but RDP Manager doesn't yet implement the browser sign-in it needs.
 - **Smart card *logon*.** Smart cards and YubiKeys are redirected for use inside Windows, but you can't sign in to Windows with them yet.
 - **H.264 on FreeRDP connections.** FreeRDP connections render RemoteFX/progressive in software. RDPKit connections use hardware H.264.
+- **Kerberos on the RDPKit engine.** RDPKit signs in with NTLM only. Kerberos connections use FreeRDP (Automatic picks it); with the engine set to RDPKit, "Kerberos (NTLM fallback)" signs in with NTLM and "Kerberos only" doesn't connect.
+- **Kerberos to an IP address.** Kerberos needs the server's DNS name; see docs/KERBEROS.md.
 - **Clipboard on FreeRDP connections** is text only. RDPKit connections also carry images, rich text and files.
 
 ## Not implemented yet
@@ -15,7 +17,7 @@ Status as of 0.4.1. "Not verified live" means the code path exists and builds, b
 - **Split view of several sessions** and **session thumbnails**.
 - **Reachability checks.** The sidebar shows no "online" state. Status dots reflect only sessions you opened.
 - **App Sandbox.** See SECURITY.md.
-- **⌘C, ⌘V and other Mac editing shortcuts** go to Windows as Win+C, Win+V… while "Send ⌘ shortcuts to remote" is on. Use Control+C / Control+V, or turn the setting off. Mapping them to Ctrl, as Microsoft's client does, is planned.
+- **⌘C, ⌘V and other Mac editing shortcuts** go to Windows as Win+C, Win+V… while "Send ⌘ shortcuts to remote" is on. Use Control+C / Control+V, or turn the setting off. The same goes for ⌃⌘F (full screen), which Windows receives as Ctrl+Win+F: use the green window button or View › Enter Full Screen. Mapping them to Ctrl, as Microsoft's client does, is planned.
 - **Keyboard layout of reconnected sessions.** The Mac's layout is announced when connecting, and Windows applies it only to new sessions.
 - **Intel Macs.** The build is Apple Silicon only.
 - **Desktops larger than 8192 pixels a side or 8192 × 4608 pixels** are refused on FreeRDP connections, as a guard against servers that ask for huge framebuffers.
@@ -45,9 +47,16 @@ Verified against Windows 11 (Parallels VM) on 2026-11-04:
 - Typing through Run
 - Wrong-password handling
 
+Verified against a Windows Server 2025 domain on 2026-11-07:
+
+- Kerberos sign-in, with NTLM fallback and Kerberos only (server events show Kerberos)
+- Desktop, resize, clipboard in both directions and Sign Out on FreeRDP
+- Sign-in and H.264 desktop on RDPKit
+- Several sessions open at once
+
 Still unverified:
 
-- **Kerberos** (no domain available), including KDC proxy.
+- **KDC proxy** (no KDC Proxy server available).
 - **Smart card readers and YubiKeys:** the channel is active, but no reader was attached during testing.
 - **USB device redirection.**
 - **Microphone redirection.**

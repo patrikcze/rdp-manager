@@ -27,7 +27,7 @@ Live tests read credentials only from the environment. Never put them in files.
 | `RDPEngineIntegrationTests/SSHLocalServerTests` | Real OpenSSH sessions against a throwaway local sshd: host keys, key/agent/passphrase sign-in through askpass, resize, ProxyJump, timeouts, cancel, no leaks |
 | `RDPEngineIntegrationTests/LiveFreeRDPTests` | Opt-in: real FreeRDP bridge sign-in (Auto, NLA), pixels arrive, certificate callback runs, wrong password fails authentication |
 
-Last run (2026-11-07, macOS 27.2, Xcode 27.2, Swift 6.4.2, OpenSSH 10.5p1, Apple Silicon): **114 automated tests passed** (69 RDP and core tests from before SSH support, unchanged, plus 45 SSH tests). The 3 live tests passed against a Windows 11 VM on 2026-11-04 and were not rerun after the security fixes.
+Last run (2026-11-07, macOS 27.2, Xcode 27.2, Swift 6.4.2, OpenSSH 10.5p1, Apple Silicon): **117 automated tests passed** (72 RDP and core tests, 45 SSH tests). The 3 automated live tests passed against a Windows 11 VM on 2026-11-04 and were not rerun after the security fixes; the domain tests below were run by hand on 0.4.1.
 
 ## Functional test matrix
 
@@ -45,14 +45,24 @@ Last run (2026-11-07, macOS 27.2, Xcode 27.2, Swift 6.4.2, OpenSSH 10.5p1, Apple
 | Incorrect password → clear error, no retry loop | PASS | Live FreeRDP test; mapping and policy tests |
 | Unreachable host / wrong service / timeout | PASS | Engine integration tests |
 | Saved groups/hosts, restart restores | PASS | Persistence tests, screenshots |
-| Windows Server 2025 / 2022 | NOT TESTED | No host available |
-| Kerberos | NOT TESTED | No domain available |
+| Windows Server 2025, FreeRDP engine | PASS | 2026-11-07, domain member server: Kerberos sign-in, desktop, resize (Reconnects stayed 0), clipboard both ways, Sign Out |
+| Windows Server 2025, RDPKit engine | PARTIAL | 2026-11-07: NTLM sign-in and H.264 desktop (avc444v2, hardware decode). Resize, clipboard and Sign Out not run on this engine |
+| Windows Server 2022 | NOT TESTED | No host available |
+| Kerberos (NTLM fallback), server DNS name | PASS | 2026-11-07, FreeRDP: event 4624 on the server, logon type 3, package Kerberos, no NTLM |
+| Kerberos only, server DNS name | PASS | 2026-11-07: 4624 logon type 3 Kerberos; also with no Kerberos configuration file (domain controllers found through DNS) |
+| Kerberos only, user `user@domain` with empty Domain field | PASS | Same sessions as above |
+| Kerberos only, wrong password | PASS | Asked for the password again; no automatic retry |
+| Kerberos only, IP address as host | PASS (refused) | No sign-in, so no NTLM. 0.4.1 said "user name or password is incorrect"; 0.4.2 says to use the DNS name (unit-tested, not rechecked live) |
+| Kerberos (NTLM fallback), IP address as host | PASS (falls back) | 4624 logon type 3 package NTLM, NTLM V2, as designed |
+| Kerberos only on the RDPKit engine | FAIL in 0.4.1, fixed in 0.4.2 | 0.4.1 connected; RDPKit implements only NTLM (a fallback run on RDPKit logged NTLM V2). 0.4.2 refuses to connect (unit-tested, not rechecked live) |
+| KDC proxy | NOT TESTED | No KDC Proxy server |
 | USB, microphone | NOT TESTED | |
-| Sign Out of Windows | NOT TESTED live | Same Run path as verified typing |
+| Sign Out of Windows | PASS | 2026-11-07, Windows Server 2025, FreeRDP: "Signing out…", then "Signed out" and status Disconnected |
 | Invalid/changed certificate prompt | NOT TESTED live | |
-| Multiple sessions, resize, full screen | NOT TESTED live | |
+| Multiple sessions, resize | PASS | 2026-11-07: three RDP sessions connected at once in tabs; Server 2025 desktop followed the window size without reconnecting |
+| Full screen, detached windows with a live session | NOT TESTED live | ⌃⌘F went to Windows while "Send ⌘ shortcuts to remote" was on (see KNOWN-LIMITATIONS) |
 | Control+C in a Windows app → Mac clipboard | PASS | 2026-11-04, both engines: Notepad, Control+A then Control+C sent as real macOS key events through the app; text arrived on the Mac clipboard |
-| Clipboard Mac → Windows | NOT TESTED live | |
+| Clipboard Mac → Windows | PASS | 2026-11-07, Windows Server 2025, FreeRDP: text pasted into Notepad; Notepad → Mac also verified |
 | Network interruption → reconnect | NOT TESTED live | Policy unit-tested |
 | Server disconnect racing resize/clipboard (FreeRDP) | NOT TESTED live | Lock design checked against FreeRDP 3.32.2 teardown order; no AddressSanitizer stress run |
 | Oversized server desktop (FreeRDP) | NOT TESTED live | Limits unit-tested; no malicious test server |
