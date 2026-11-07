@@ -16,27 +16,13 @@ struct SSHSessionView: View {
             SurfaceHost(surface: session.surface)
                 .padding(.leading, 6)
                 .padding(.top, 4)
-            switch session.phase {
-            case let .awaitingHostKeyDecision(prompt):
-                cardBackdrop { SSHHostKeyCard(session: session, prompt: prompt) }
-            case let .awaitingInput(request):
-                cardBackdrop { SSHInputCard(session: session, request: request) }
-                    .id(request.id)
-            case .idle, .connecting, .verifyingHostKey, .authenticating, .reconnecting:
-                VStack {
-                    SSHProgressBar(session: session)
-                    Spacer()
-                }
-            case let .ended(end):
-                VStack {
-                    Spacer()
-                    SSHEndedBar(session: session, end: end)
-                }
-            case .connected:
-                EmptyView()
-            }
+        }
+        // Cards and bars are overlays, never siblings in the stack: an overlay can't change
+        // the view's size. As siblings, wrapped text measured at the narrowest width made the
+        // window's content taller than the window, pushing the tab strip out of sight.
+        .overlay { phaseOverlay }
+        .overlay(alignment: .bottom) {
             VStack {
-                Spacer()
                 if let notice = session.securityKeyNotice {
                     noticeCapsule(notice, symbol: "key.radiowaves.forward")
                 }
@@ -53,6 +39,28 @@ struct SSHSessionView: View {
         }
         .onChange(of: session.phase == .connected) { _, connected in
             if connected, isVisible { session.focusInput() }
+        }
+    }
+
+    @ViewBuilder private var phaseOverlay: some View {
+        switch session.phase {
+        case let .awaitingHostKeyDecision(prompt):
+            cardBackdrop { SSHHostKeyCard(session: session, prompt: prompt) }
+        case let .awaitingInput(request):
+            cardBackdrop { SSHInputCard(session: session, request: request) }
+                .id(request.id)
+        case .idle, .connecting, .verifyingHostKey, .authenticating, .reconnecting:
+            VStack {
+                SSHProgressBar(session: session)
+                Spacer()
+            }
+        case let .ended(end):
+            VStack {
+                Spacer()
+                SSHEndedBar(session: session, end: end)
+            }
+        case .connected:
+            EmptyView()
         }
     }
 

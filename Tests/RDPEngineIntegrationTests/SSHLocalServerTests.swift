@@ -436,6 +436,30 @@ final class SSHLocalServerTests {
         await session.waitUntilEnded(timeout: 5)
     }
 
+    /// A login shell, as in the app: no startup command. Disconnect must end the session.
+    @Test func disconnectingAnInteractiveShellEndsTheSession() async throws {
+        let server = try TestSSHServer(authorizedKeys: [])
+        defer { server.stop() }
+        let key = try server.makeKey("user")
+        try String(contentsOf: key.appendingPathExtension("pub"), encoding: .utf8)
+            .write(to: server.directory.appending(path: "authorized_keys"), atomically: true, encoding: .utf8)
+        let knownHosts = server.directory.appending(path: "known_hosts")
+        try "[127.0.0.1]:\(server.port) \(String(contentsOf: server.hostKey.appendingPathExtension("pub"), encoding: .utf8))"
+            .write(to: knownHosts, atomically: true, encoding: .utf8)
+        var settings = SSHConnectionSettings()
+        settings.autoReconnect = true
+        let session = try makeSession(server: server, key: key, knownHosts: knownHosts, settings: settings)
+        session.connect()
+        let connected = await wait(for: session) { $0 == .connected || $0.isEnded }
+        #expect(connected == .connected)
+        try await Task.sleep(for: .milliseconds(500))
+        session.disconnect()
+        let phase = await wait(for: session, seconds: 8) { $0.isEnded }
+        guard case let .ended(end) = phase else { Issue.record("not ended: \(phase)"); return }
+        #expect(end.kind == .userDisconnected)
+        #expect(session.reconnectCount == 0)
+    }
+
     @Test func remoteExitEndsTheSessionWithoutReconnect() async throws {
         let server = try TestSSHServer(authorizedKeys: [])
         defer { server.stop() }
