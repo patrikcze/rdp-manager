@@ -42,6 +42,49 @@ struct AskpassChannelTests {
         #expect(FileManager.default.fileExists(atPath: directory) == false)
     }
 
+    /// The helper connects, then writes: a read in between must wait for the question, not
+    /// fail. Seen on CI as "Host Key Not Verified" before the user was asked.
+    @Test func anAcceptedConnectionWaitsForTheQuestion() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "rdpm-accept-\(UUID().uuidString.prefix(8))")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appending(path: "s").path
+        let listener = socket(AF_UNIX, SOCK_STREAM, 0)
+        defer { Darwin.close(listener) }
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutableBytes(of: &address.sun_path) { buffer in
+            let bytes = Array(path.utf8)
+            buffer.copyBytes(from: bytes)
+            buffer[bytes.count] = 0
+        }
+        let bound = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(listener, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        #expect(bound == 0)
+        listen(listener, 1)
+        // As SSHSideChannels sets its listener.
+        _ = fcntl(listener, F_SETFL, fcntl(listener, F_GETFL) | O_NONBLOCK)
+        let client = try connect(to: path)
+        defer { Darwin.close(client) }
+        let accepted = Darwin.accept(listener, nil, nil)
+        #expect(accepted >= 0)
+        defer { Darwin.close(accepted) }
+        // The cause: the accepted socket starts out non-blocking.
+        #expect(fcntl(accepted, F_GETFL) & O_NONBLOCK != 0)
+
+        SSHSideChannels.prepareAccepted(accepted)
+        #expect(fcntl(accepted, F_GETFL) & O_NONBLOCK == 0)
+        // The question arrives a moment after the connection; the read waits for it.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) {
+            var byte: UInt8 = 42
+            _ = Darwin.write(client, &byte, 1)
+        }
+        var received: UInt8 = 0
+        #expect(Darwin.read(accepted, &received, 1) == 1)
+        #expect(received == 42)
+    }
+
     private enum PeerState { case open, closed }
 
     private func peek(_ fd: Int32) -> PeerState {
