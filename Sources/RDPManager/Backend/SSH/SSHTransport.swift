@@ -296,15 +296,11 @@ final class SSHSideChannels: @unchecked Sendable {
         while true {
             let client = Darwin.accept(listener, nil, nil)
             guard client >= 0 else { return }
-            _ = fcntl(client, F_SETFD, FD_CLOEXEC)
+            Self.prepareAccepted(client)
             guard AskpassPeer.isTrusted(client, helperPath: helperPath, ancestor: trustedAncestor) else {
                 Darwin.close(client)
                 continue
             }
-            var timeout = timeval(tv_sec: 5, tv_usec: 0)
-            setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
-            var noSigPipe: Int32 = 1
-            setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
             guard let hint = readField(client), let prompt = readField(client) else {
                 Darwin.close(client)
                 continue
@@ -323,6 +319,19 @@ final class SSHSideChannels: @unchecked Sendable {
                 self?.queue.async { self?.finish(client, answer: answer) }
             }
         }
+    }
+
+    /// An accepted socket inherits the listener's O_NONBLOCK on macOS. The helper may connect a
+    /// moment before it writes its question; a non-blocking read then failed with EAGAIN, the
+    /// connection was dropped and ssh took that as "no" ("Host key verification failed").
+    /// Reads block instead, bounded by a 5 second timeout.
+    static func prepareAccepted(_ client: Int32) {
+        _ = fcntl(client, F_SETFD, FD_CLOEXEC)
+        _ = fcntl(client, F_SETFL, fcntl(client, F_GETFL) & ~O_NONBLOCK)
+        var timeout = timeval(tv_sec: 5, tv_usec: 0)
+        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        var noSigPipe: Int32 = 1
+        setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
     }
 
     private func readField(_ fd: Int32) -> String? {

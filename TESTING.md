@@ -27,7 +27,7 @@ Live tests read credentials only from the environment. Never put them in files.
 | `RDPEngineIntegrationTests/SSHLocalServerTests` | Real OpenSSH sessions against a throwaway local sshd: host keys, key/agent/passphrase sign-in through askpass, resize, ProxyJump, timeouts, cancel, no leaks |
 | `RDPEngineIntegrationTests/LiveFreeRDPTests` | Opt-in: real FreeRDP bridge sign-in (Auto, NLA), pixels arrive, certificate callback runs, wrong password fails authentication |
 
-Last run (2026-11-07, macOS 27.2, Xcode 27.2, Swift 6.4.2, OpenSSH 10.5p1, Apple Silicon): **113 automated tests passed** (69 RDP and core tests from before SSH support, unchanged, plus 44 SSH tests). The 3 live tests passed against a Windows 11 VM on 2026-11-04 and were not rerun after the security fixes.
+Last run (2026-11-07, macOS 27.2, Xcode 27.2, Swift 6.4.2, OpenSSH 10.5p1, Apple Silicon): **114 automated tests passed** (69 RDP and core tests from before SSH support, unchanged, plus 45 SSH tests). The 3 live tests passed against a Windows 11 VM on 2026-11-04 and were not rerun after the security fixes.
 
 ## Functional test matrix
 

@@ -2,6 +2,7 @@
 
 ## Unreleased
 - **SSH disconnect broke the window.** After an SSH session ended, the window's content grew taller than the window: the tab strip slid under the toolbar and the Disconnected bar with Reconnect went off the bottom. The session cards and bars are now overlays, which can't change the layout.
+- **Host key question sometimes failed before you were asked.** The askpass connection was read without waiting, so if the helper had connected but not yet sent its question, the app hung up and OpenSSH reported "Host key verification failed". Reads now wait for the question, up to 5 seconds.
 
 ## 0.4.0 (2026-11-07)
 - **SSH terminals.** SSH hosts live in the same groups as RDP hosts and open in the same tabs and windows, in an in-app terminal (SwiftTerm 1.99.2) running the macOS OpenSSH client on a PTY. Sign-in follows `~/.ssh/config`: agent, key files, OpenSSH certificates, passwords, keyboard-interactive, GSSAPI and ProxyJump. The session's state comes from OpenSSH's own log, so "Connected" means the shell is live.
